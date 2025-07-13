@@ -4,8 +4,9 @@ from .Median import *
 from .GeoMed import *
 from .Krum import *
 from .Bulyan import *
-from .signcheck import *
+from .signguard import *
 from .DnC import *
+from .AlignIns import AlignIns
 
 def aggregator(rule):
     # gradient aggregation rule
@@ -16,9 +17,10 @@ def aggregator(rule):
            'Multi-Krum':multi_krum,
            'Bulyan':bulyan,
            'DnC':divide_conquer,
-           'SignGuard': signcheck_multiclass,
+           'SignGuard': signguard_multiclass,
            'SignGuard-Sim': signguard_multiclass_plus1,
            'SignGuard-Dist': signguard_multiclass_plus2,
+           'AlignIns': AlignIns,
     }
 
     return GAR[rule]

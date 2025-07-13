@@ -1,0 +1,17 @@
+/outputs/*
+/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.pkl.gz
+*.pt
+*.pth
+*.log
+*.json
+*.csv
+*.txt
+*.out
+*.err
+*.cache
+/data/

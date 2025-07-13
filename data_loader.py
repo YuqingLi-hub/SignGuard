@@ -1,7 +1,7 @@
 import numpy as np
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset
-from femnist import FEMNIST
+# from femnist import FEMNIST
 
 def mnist_iid(dataset, num_users):
     """
