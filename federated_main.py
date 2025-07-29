@@ -4,13 +4,15 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import MultiStepLR, ExponentialLR
 from data_loader import get_dataset
 from running import test_classification, benignWorker, byzantineWorker
-from models import CNN, ResNet18
+from models import CNN, ResNet18, ResNet9
 from aggregators import aggregator
 from attacks import attack
 from options import args_parser
+from torch.nn.utils import parameters_to_vector
 import tools
 import time
 import copy
+from watermarks.qim import QIM
 
 # make sure that there exists CUDA，and show CUDA：
 # print(device)
@@ -39,7 +41,17 @@ import copy
 #     "unbalance": False,
 #     "device": device
 # }
+
+###########################
+'''
+server send global model to clients
+clients receive global model and train local model
+
+how to let client only use m to recover the global model? (without alpha, )
+'''
 if __name__ == '__main__':
+    # TODO: set random seed, numpy
+    np.random.seed(2021)
     args = args_parser()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
@@ -48,13 +60,18 @@ if __name__ == '__main__':
     train_loader, test_loader = get_dataset(args)
     # construct model
     if args.dataset == 'cifar':
+        # if args.agg_rule == 'AlignIns':
+        #     global_model = ResNet9()
+        # else:
         global_model = ResNet18()
     elif args.dataset == 'fmnist':
         global_model = CNN().to(device)
     else:
         global_model = CNN().to(device)
-            
-    global_model = global_model.cuda()
+    if device.type == 'cuda':
+        global_model = global_model.cuda()
+    else:
+        global_model = global_model.cpu()
 
     # optimizer
     optimizer = torch.optim.SGD(global_model.parameters(), lr=args.lr,
@@ -71,14 +88,14 @@ if __name__ == '__main__':
     benign_rate = []
 
     # attack method
-    attack_list = ['random', 'signflip', 'noise', 'label_flip', 'lie', 'byzMean', 'min_max', 'min_sum', 'non']
+    attack_list = ['random', 'sign_flip', 'noise', 'label_flip', 'lie', 'byzMean', 'min_max', 'min_sum', 'non']
     # attack_id = np.random.randint(9)
     #args.attack = attack_list[attack_id]
     Attack = attack(args.attack)
 
     # Gradient Aggregation Rule
     GAR = aggregator(args.agg_rule)()
-    
+    Watermark = QIM(delta=1.0)
 
     def train_parallel(args, model, train_loader, optimizer, epoch, scheduler):
         print(f'\n---- Global Training Epoch : {epoch+1} ----')
@@ -88,7 +105,7 @@ if __name__ == '__main__':
         device = args.device
         iter_loss = []
         data_loader = []
-
+        mask = None
         for idx in range(num_users):
             data_loader.append(iter(train_loader[idx]))
 
@@ -100,22 +117,40 @@ if __name__ == '__main__':
             local_losses = []
             benign_grads = []
             byz_grads = []
+            agent_data_sizes = {}
             
             for idx in idx_users[:num_byzs]:
+                if mask is not None:
+                    args.masks = mask
+                    args.watermark = Watermark
+                    grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)  
                 grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args)
                 byz_grads.append(grad)
+                agent_data_sizes[idx] = len(data_loader[idx])
 
             for idx in idx_users[num_byzs:]:
+                if mask is not None:
+                    args.masks = mask
+                    args.watermark = Watermark
+                    grad, loss = benignWorker(model, data_loader[idx], optimizer, device, args, watermark=True)
                 grad, loss = benignWorker(model, data_loader[idx], optimizer, device)
                 benign_grads.append(grad)
                 local_losses.append(loss)
+                agent_data_sizes[idx] = len(data_loader[idx])
 
             # get byzantine gradient
             byz_grads = Attack(byz_grads, benign_grads, GAR)
             # get all local gradient
             local_grads = byz_grads + benign_grads
+            # for alignIns, we need to flatten the gradients
+            # flatten_global_grad = parameters_to_vector(
+            #     [model.state_dict()[name] for name in model.state_dict()]).detach()
+            flatten_global_grad = tools.get_parameter_values(model)
             # get global gradient
-            global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=grad_0, iteration=it)
+            global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it)
+            masks = GAR.masks if hasattr(GAR, 'masks') else None
+            sign_message = torch.sign(global_grad[:,masks[0][0]:masks[0][1]]) if masks is not None else None
+            global_grad_w = Watermark.embed(global_grad, sign_message)
             byz_rate.append(isbyz)
             benign_rate.append((len(selected_idx)-isbyz*num_byzs)/(num_users-num_byzs))
             # update global model

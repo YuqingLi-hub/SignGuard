@@ -93,7 +93,40 @@ class ResNet(nn.Module):
         out = self.linear(out)
         return out
 
+class resNet9(nn.Module):
+    def __init__(self, num_classes=10):
+        super().__init__()
+        self.in_planes = 64
 
+        # Stem
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+
+        # Conv + Residual Block A
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.block1 = BasicBlock(128, 128, stride=1)
+
+        # Conv + Residual Block B
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(256)
+        self.block2 = BasicBlock(256, 256, stride=1)
+
+        # Head
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.linear = nn.Linear(256, num_classes)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.block1(x)
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = self.block2(x)
+        x = self.pool(x)
+        x = torch.flatten(x, 1)
+        return self.linear(x)
+def ResNet9():
+    return resNet9()
 def ResNet18():
     return ResNet(BasicBlock, [2,2,2,2])
 

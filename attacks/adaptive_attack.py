@@ -18,7 +18,7 @@ def adaptive_attack_std(byz_grads, benign_grads, agg_rule, g0=None, *args, **kwa
     grad_p = -1.0 * torch.std(est_grads, dim=0)
 
     GAR = agg_rule
-    if GAR.name in {'Multi-Krum', 'Bulyan', 'DnC', 'SignGuard'}:
+    if GAR.name in {'Multi-Krum', 'Bulyan', 'DnC', 'SignGuard','AlignIns'}:
         metric = num_byz_selected(num_byzs)
         max_byz_select = 1
     else:
