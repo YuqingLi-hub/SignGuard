@@ -6,9 +6,17 @@ from attacks import *
 import tools
 import numpy as np
 import time
+from watermarks.qim import QIM
 
-
-def benignWorker(model, train_loader, optimizer, device):
+def benignWorker(model, train_loader, optimizer, args, watermark=False):
+    device = args.device
+    mask = None
+    if watermark:
+        Watermark = args.watermark
+        mask = args.masks
+        glbal_grad_w = tools.get_gradient_values(model)
+        global_grad, m = Watermark.detect(glbal_grad_w)
+        tools.set_gradient_values(model, global_grad)
     model.train()
     criterion = nn.CrossEntropyLoss()
     images, labels = next(train_loader)
@@ -18,12 +26,19 @@ def benignWorker(model, train_loader, optimizer, device):
     loss = criterion(outputs, labels)
     loss.backward()
     user_grad = tools.get_gradient_values(model)
-
+    # shuffle the gradient use the sign (m)
+    # user_grad = lfea(m)
     return user_grad, loss.item()
 
-def byzantineWorker(model, train_loader, optimizer, args):
+def byzantineWorker(model, train_loader, optimizer, args, watermark=False):
     device = args.device
     attack = args.attack
+    if watermark:
+        Watermark = args.watermark
+        mask = args.masks
+        glbal_grad_w = tools.get_gradient_values(model)
+        global_grad, m = Watermark.detect(glbal_grad_w)
+        tools.set_gradient_values(model, global_grad)
     model.train()
     criterion = nn.CrossEntropyLoss()
     images, labels = next(train_loader)
