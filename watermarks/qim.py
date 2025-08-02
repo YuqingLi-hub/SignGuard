@@ -8,7 +8,7 @@ date = date.today().strftime("%Y-%m-%d_")
 HOME = os.environ["HOME"]
 
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 class QIM:
     def __init__(self, delta):
@@ -35,6 +35,18 @@ class QIM:
         # y = np.floor((x-dm)/d)*d + dm
         # q_mk = np.floor((x-dm-k)/d)*d + dm + k
         q_mk = quanti(x-dm-k, d) + dm + k
+        self.q_mk = q_mk
+        self.x = x
+        # self.dm = dm
+        # plt.plot(x, x, label='Identity', linestyle='--', alpha=0.4)
+        # plt.plot(x, quanti(x-dm-k, d), label='Quantized', linewidth=2)
+        # plt.xlabel("Input")
+        # plt.ylabel("Quantized Output")
+        # plt.title("Quantization Step Function")
+        # plt.grid(True)
+        # plt.legend()
+        # plt.savefig(f"./outputs/qim/example_quantization{alpha}.png")
+        # plt.close()
         # for i in quanti(x-dm-k, d):
         #     if i % d != 0:
         #         print('wrong quantization', i, d, i % d)
@@ -63,57 +75,19 @@ class QIM:
         # z0 = self.embed(z, 0)
         # z1 = self.embed(z, 1)
         dm_hat = (quanti(z-k,self.delta/M_cls)+k)
-        # d0 = self.set_delta(z,0,k)
-        # d1 = self.set_delta(z,1,k)
-        # print('d0', d0)
-        # print('d1', d1)
-        # dm_val_pos = self.delta / 4.0   # For m=1, dm = delta/4
-        # dm_val_neg = -self.delta / 4.0  # For m=0, dm = -delta/4
-        # remainder = (z - k) % self.delta
-        # dist_to_expected_pos_dm = np.abs(remainder - dm_val_pos)
-        # dist_to_expected_neg_dm_mod = np.abs(remainder - (self.delta + dm_val_neg)) # (1 + (-0.25)) = 0.75
-        # dm_hat = np.where(dist_to_expected_pos_dm < dist_to_expected_neg_dm_mod,
-        #                   dm_val_pos,
-        #                   dm_val_neg)
-        # dm_hat = (quanti(z-k,self.delta/M_cls)+k)
-        # gen = zip(range(len(z)), d0, d1)
-        
-        # for i, dd0, dd1 in gen:
-        #     if dm_hat[i] == dd0:
-        #         m_detected[i] = 0
-        #     elif dm_hat[i] == dd1:
-        #         m_detected[i] = 1
-            # else:
-                # print('Error in detection, dm_hat:', dm_hat[i], 'd0:', dd0, 'd1:', dd1)
-                # m_detected[i] = -1
-        #     if dd0 < dd1:
-        #         m_detected[i] = 0
-        #     else:
-        #         m_detected[i] = 1
-        # M_cls = 2.
-        # # TODO: findout what should be the best modulo or representation of {delta}, modulo
-        # # The points on the sets is d0/d1 + delta*integer
-        # # print(np.allclose(quanti(z-k,self.delta/M_cls)+k,z))
-        
-        # dm_hat = (quanti(z-k,self.delta/M_cls)+k)
-        # for i,d in zip(range(len(dm_hat)),dm_hat):
-        #     # d -self.delta/4.
-        #     # print((d-self.delta/4.)%self.delta)
-        #     print(d%self.delta)
-
-            # print()
-            # if (d-self.delta/4.) in z0:
-            #     # m_detected[i] = 0
-            # else:
-            #     m_detected[i] = 1
-        
-        # print('m1', m1)
-        # print('m0', m0)
-        # print(m1+ (m0))
-        # print(dm_hat%self.delta)
-        # d1 = + self.delta / 4., # d0 = - self.delta / 4.
-        # print(dm_hat%self.delta)
         m_detected = np.array([1 if i>0 else 0 for i in dm_hat%self.delta])
+        # dm = m_detected*self.delta/2.
+        # plt.plot(self.x, self.x, label='Identity', linestyle='--', alpha=0.4)
+        # plt.plot(self.x, quanti(self.x-dm-k, self.delta)-dm_hat, label='Quantized', linewidth=2)
+        # plt.xlabel("Input")
+        # plt.ylabel("Quantized Output")
+        # plt.title("Quantization Step Function")
+        # plt.grid(True)
+        # plt.legend()
+        # plt.savefig(f"./outputs/qim/example_quantization_{alpha}.png")
+        # plt.close()
+
+        
         # print('m', m)
         # val_before_mod = (self.delta / M_cls) * np.floor(((z - k) * M_cls) / self.delta) + k
 
@@ -128,8 +102,8 @@ class QIM:
         # print('z', z)
         # print(alpha*dm_hat)
         # print((z-alpha * dm_hat))
-        if alpha == 1:
-            print('alpha is 1, no restoration')
+        if np.isclose(alpha, self.delta):
+            print(f'alpha is {self.delta}, no restoration')
             z_hat = z - alpha * dm_hat
         else:
             # print(f'alpha={alpha}, restoring original signal')
@@ -144,75 +118,6 @@ class QIM:
         returns: a random binary sequence of length l
         """
         return np.random.choice((0, 1), l)
-    # def extract_and_restore_rqim_paper_method(self,watermarked_y, secret_k_sequence=0):
-    #     """
-    #     Extracts watermark bits and restores original weights from a sequence of watermarked weights.
-
-    #     Args:
-    #         watermarked_y (np.array): Array of watermarked weights.
-    #         delta (float): Quantization step size used during embedding.
-    #         alpha (float): Scaling factor used during embedding.
-    #         secret_k_sequence (np.array): The sequence of secret keys (k values) used for each weight.
-
-    #     Returns:
-    #         tuple: (extracted_watermark_bits, restored_original_weights)
-    #             extracted_watermark_bits (np.array): The extracted binary watermark bits.
-    #             restored_original_weights (np.array): The perfectly restored original weights.
-    #     """
-    #     restored_original_weights = np.zeros_like(watermarked_y)
-    #     extracted_watermark_bits = []
-    #     alpha = self.alpha
-    #     delta = self.delta
-    #     # Calculate the receiver's quantizer step size (from Eq. 11)
-    #     # Note: If alpha is 1, this becomes division by zero. Paper implies alpha < 1.
-    #     receiver_delta_prime = delta / 2
-
-    #     # Define the dithering offsets for extraction (e.g., 0 and delta/2)
-    #     # This must match what was used during embedding!
-    #     d_extraction_values = {0: 0, 1: delta / 2} # Assume this mapping was used
-
-    #     for i, y_i in enumerate(watermarked_y):
-    #         k_i = secret_k_sequence # Get the specific secret key used for this weight
-
-    #         # Step 1: Extract the watermark bit (based on Eq. 11 logic)
-    #         # This part is implicit in the paper's Eq 11, which shows d'_m.
-    #         # We need to test which 'm' makes y_i align with its lattice.
-    #         # We check distances to the two possible shifted lattices for 0 and 1
-            
-    #         # Candidate 1: Quantize as if bit 0 was embedded
-    #         arg_q_0 = y_i - k_i - d_extraction_values[0] # Use d_0 for testing
-    #         quantized_val_0 = quanti(arg_q_0, receiver_delta_prime)
-    #         lattice_val_0 = quantized_val_0 + k_i + d_extraction_values[0] # Reconstruct receiver's lattice point
-
-    #         # Candidate 2: Quantize as if bit 1 was embedded
-    #         arg_q_1 = y_i - k_i - d_extraction_values[1] # Use d_1 for testing
-    #         quantized_val_1 = quanti(arg_q_1, receiver_delta_prime)
-    #         lattice_val_1 = quantized_val_1 + k_i + d_extraction_values[1] # Reconstruct receiver's lattice point
-
-    #         # Determine which bit was likely embedded based on closeness
-    #         # print(abs(y_i - lattice_val_0), abs(y_i - lattice_val_1))
-    #         if abs(y_i - lattice_val_0) < abs(y_i - lattice_val_1):
-    #             extracted_bit = 0
-    #         else:
-    #             extracted_bit = 1
-    #         extracted_watermark_bits.append(extracted_bit)
-
-    #         # Step 2: Restore the original signal (based on Eq. 13/14, assuming noiseless)
-    #         # We need the Q_mk_s from embedding (which is lattice_val_extracted_bit)
-    #         # From Eq. 9: s_R_QIM = alpha * Q_mk_s + (1 - alpha) * s
-    #         # Rearranging for s (where s_R_QIM is y_i, and s is restored_original_weights[i]):
-    #         # y_i - alpha * Q_mk_s = (1 - alpha) * s
-    #         # s = (y_i - alpha * Q_mk_s) / (1 - alpha)
-
-    #         Q_mk_s_extracted = quanti(y_i - d_extraction_values[extracted_bit] - k_i, receiver_delta_prime) + d_extraction_values[extracted_bit] + k_i
-    #         # Using the receiver's quantizer based on the extracted bit, this reconstructs Q_mk_s_extracted
-
-    #         # Using Eq. 13 without noise (n=0)
-    #         # The term Q_Delta/(1-alpha) + k(y) in Eq 13 is the Q_mk_s_extracted
-    #         restored_s_i = (y_i - alpha * Q_mk_s_extracted) / (1 - alpha)
-    #         restored_original_weights[i] = restored_s_i
-
-    #     return np.array(extracted_watermark_bits), restored_original_weights
 def quanti(x, delta):
     """
     quantizes the input x with step size delta
@@ -220,35 +125,7 @@ def quanti(x, delta):
     # the delta*floor[x/delta]
     
     return np.round(x / delta) * delta
-# def floor_to_delta(x, d):
-    
-#     # d0 = (-1)**(0+1) * d/4.
-#     # d1 = (-1)**(1+1) * d/4.
-#     x = x % d
-# def test_qim(delta=1,alpha=0.51):
-#     """
-#     tests the embed and detect methods of class QIM
-#     """
-#     np.random.seed(42)
-#     l = 10000 # binary message length
-#     delta = 1 # quantization step
-#     qim = QIM(delta)
-#     # while True:
-#     # x = np.random.randint(0, 255, l).astype(float) # host sample
-#     x = np.random.uniform(-100, 255, l).astype(float) # host sample
-#     print('x', x)
-#     msg = qim.random_msg(l)
-#     y = qim.embed(x, msg,alpha=alpha)
-#     print('y', y)
-#     z_detected, msg_detected = qim.detect(y,alpha=alpha)
-#     print(np.mean(np.abs(z_detected - x)))
 
-#     print('message accuracy', sum(msg==msg_detected)/len(msg))
-#     # print()
-#     # print(msg[:10], msg_detected[:10])
-#     # print(np.unique(msg_detected))
-#     # assert np.allclose(msg, msg_detected) # compare the original and detected messages
-#     # assert np.allclose(x, z_detected)     # compare the original and detected vectors
 def test_qim(delta=1,alpha=0.51,k=0):
     """
     tests the embed and detect methods of class QIM
@@ -259,7 +136,8 @@ def test_qim(delta=1,alpha=0.51,k=0):
     qim = QIM(delta)
     # while True:
     # x = np.random.randint(0, 255, l).astype(float) # host sample
-    x = np.random.uniform(-100, 255, l).astype(float) # host sample
+    # x = np.random.uniform(-100, 255, l).astype(float) # host sample
+    x = np.linspace(-5, 5, l)
     print('x', x)
     msg = qim.random_msg(l)
 
@@ -325,7 +203,8 @@ def test_qim_1(delta=1,embedding_alpha=0.99):
     # delta = 1.0 # quantization step (use float for consistency)
     qim = QIM(delta)
 
-    x = np.random.uniform(0, 255, l).astype(float) # host sample
+    # x = np.random.uniform(0, 255, l).astype(float) # host sample
+    x = np.linspace(-5, 5, l).astype(float)  # host sample
     print('Original x (first 5):', x[:5])
 
     msg = qim.random_msg(l)
@@ -415,12 +294,29 @@ def test_qim_1(delta=1,embedding_alpha=0.99):
 
 
 def main():
+    
+
+    # Δ = 1.0  # quantization step size
+    # x = np.linspace(-5, 5, 1000)
+    # y = np.floor(x / Δ + 0.5) * Δ  # midpoint rounding quantizer
+
+    # plt.plot(x, x, label='Identity', linestyle='--', alpha=0.4)
+    # plt.plot(x, y, label='Quantized', linewidth=2)
+    # plt.xlabel("Input")
+    # plt.ylabel("Quantized Output")
+    # plt.title("Quantization Step Function")
+    # plt.grid(True)
+    # plt.legend()
+    # plt.savefig(f"./outputs/example_quantization.png")
+    # plt.close()
+
     # delta_values = [0.5, 1.0, 1.5, 2.0]
     # for d in delta_values:
-    #     for a in np.arange(0.50, 1.01, 0.05):
-    #         # print(f"Testing QIM with alpha={a}")
-    #         # alphas, error, msg_error = test_qim_1(delta=d, embedding_alpha=a)
-    #         test_qim_1(delta=d, embedding_alpha=a)
+    d = 1.0
+    for a in np.arange(0.50, 1.01, 0.05):
+        # print(f"Testing QIM with alpha={a}")
+        # alphas, error, msg_error = test_qim_1(delta=d, embedding_alpha=a)
+        test_qim_1(delta=d, embedding_alpha=a)
             # print(f"Alphas: {alphas[:5]}...")
             # Plot Message Accuracy
             # from matplotlib import pyplot as plt
