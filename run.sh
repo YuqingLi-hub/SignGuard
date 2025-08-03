@@ -16,8 +16,8 @@ module load python/3.12.3
 module load cuda/11.7.0
 
 source /fred/oz410/venv/pytorch/bin/activate
-JOB_NAME=$1
-ATTACK_TYPE=$2
-python -u federated_main.py --agg_rule SignGuard --attack "$ATTACK_TYPE"
-# python -u federated_main.py
+JOB_NAME=$1  
+# ATTACK_TYPE=$2
+# python -u federated_main.py --agg_rule SignGuard --attack "$ATTACK_TYPE"
+python -u federated_main.py --agg_rule SignGuard
 # python -u federated_main.py --agg_rule AlignIns --attack "$ATTACK_TYPE" --local_iter 2

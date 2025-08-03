@@ -120,20 +120,20 @@ if __name__ == '__main__':
             agent_data_sizes = {}
             
             for idx in idx_users[:num_byzs]:
-                if mask is not None:
-                    args.masks = mask
-                    args.watermark = Watermark
-                    grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)  
+                # if mask is not None:
+                #     args.masks = mask
+                #     args.watermark = Watermark
+                #     grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)  
                 grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args)
                 byz_grads.append(grad)
                 agent_data_sizes[idx] = len(data_loader[idx])
 
             for idx in idx_users[num_byzs:]:
-                if mask is not None:
-                    args.masks = mask
-                    args.watermark = Watermark
-                    grad, loss = benignWorker(model, data_loader[idx], optimizer, device, args, watermark=True)
-                grad, loss = benignWorker(model, data_loader[idx], optimizer, device)
+                # if mask is not None:
+                #     args.masks = mask
+                #     args.watermark = Watermark
+                #     grad, loss = benignWorker(model, data_loader[idx], optimizer, device, args, watermark=True)
+                grad, loss = benignWorker(model, data_loader[idx], optimizer, args)
                 benign_grads.append(grad)
                 local_losses.append(loss)
                 agent_data_sizes[idx] = len(data_loader[idx])
@@ -148,9 +148,9 @@ if __name__ == '__main__':
             flatten_global_grad = tools.get_parameter_values(model)
             # get global gradient
             global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it)
-            masks = GAR.masks if hasattr(GAR, 'masks') else None
-            sign_message = torch.sign(global_grad[:,masks[0][0]:masks[0][1]]) if masks is not None else None
-            global_grad_w = Watermark.embed(global_grad, sign_message)
+            # masks = GAR.masks if hasattr(GAR, 'masks') else None
+            # sign_message = torch.sign(global_grad[:,masks[0][0]:masks[0][1]]) if masks is not None else None
+            # global_grad_w = Watermark.embed(global_grad, sign_message)
             byz_rate.append(isbyz)
             benign_rate.append((len(selected_idx)-isbyz*num_byzs)/(num_users-num_byzs))
             # update global model
@@ -173,3 +173,19 @@ if __name__ == '__main__':
         loss = train_parallel(args, global_model, train_loader, optimizer, epoch, scheduler)
         acc = test_classification(device, global_model, test_loader)
         print("Test Accuracy: {}%".format(acc))
+        # test watermark etc.
+        flatten_global_grad = tools.get_parameter_values(global_model).cpu().detach().numpy()
+        # random message
+        message = Watermark.random_msg(len(flatten_global_grad))
+        # embedding watermark to whole global gradient
+        global_w = Watermark.embed(flatten_global_grad, message)
+        tools.set_gradient_values(global_model, global_w)
+        acc_w = test_classification(device, global_model, test_loader)
+        # detect and recover watermark
+        reconstructed_grad, m = Watermark.detect(global_w)
+        print("Watermark acc:", np.mean(message == m))
+        print("Watermarked model Test Accuracy: {}%".format(acc_w))
+        tools.set_gradient_values(global_model, reconstructed_grad)
+        acc_recovered = test_classification(device, global_model, test_loader)
+        print("Recovered model Test Accuracy: {}%".format(acc_recovered))
+        
