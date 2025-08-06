@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --output=/fred/oz410/project/FL/SignGuard/outputs/%x-out.txt  # %x = job name
-#SBATCH --error=/fred/oz410/project/FL/SignGuard/outputs/%x-error.txt # %x = job name
+#SBATCH --output=/fred/oz410/project/FL/SignGuard/outputs/R-QIM/%x-out.txt  # %x = job name
+#SBATCH --error=/fred/oz410/project/FL/SignGuard/outputs/R-QIM/%x-error.txt # %x = job name
 #SBATCH --ntasks=1
 #SBATCH -c 6
 #SBATCH --mem=8G

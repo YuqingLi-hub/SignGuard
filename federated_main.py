@@ -95,7 +95,7 @@ if __name__ == '__main__':
 
     # Gradient Aggregation Rule
     GAR = aggregator(args.agg_rule)()
-    Watermark = QIM(delta=1.0)
+    
 
     def train_parallel(args, model, train_loader, optimizer, epoch, scheduler):
         print(f'\n---- Global Training Epoch : {epoch+1} ----')
@@ -174,17 +174,33 @@ if __name__ == '__main__':
         acc = test_classification(device, global_model, test_loader)
         print("Test Accuracy: {}%".format(acc))
         # test watermark etc.
+        alpha = 0.7
+        k = 0
+        d = 20
+        Watermark = QIM(delta=d)
         flatten_global_grad = tools.get_parameter_values(global_model).cpu().detach().numpy()
+        #########################################################
+        # test
+        grad_test = copy.deepcopy(flatten_global_grad) + torch.randn_like(tools.get_parameter_values(global_model)) * 3
+        print('distortion:',np.mean(np.abs(flatten_global_grad - global_w.cpu().detach().numpy())))
+        tools.set_gradient_values(global_model, grad_test)
+        acc_test = test_classification(device, global_model, test_loader)
+        print("Test Accuracy with noise: {}%".format(acc_test))
+        #########################################################
         # random message
         message = Watermark.random_msg(len(flatten_global_grad))
         # embedding watermark to whole global gradient
-        global_w = Watermark.embed(flatten_global_grad, message)
+        global_w = torch.tensor(Watermark.embed(flatten_global_grad, message, alpha=alpha,k=k),dtype=torch.float32).to(device)
+        print('distortion:',np.mean(np.abs(flatten_global_grad - global_w.cpu().detach().numpy())))
         tools.set_gradient_values(global_model, global_w)
         acc_w = test_classification(device, global_model, test_loader)
         # detect and recover watermark
-        reconstructed_grad, m = Watermark.detect(global_w)
+        global_w = global_w.cpu().detach().numpy()
+        reconstructed_grad, m = Watermark.detect(global_w, alpha=alpha,k=k)
         print("Watermark acc:", np.mean(message == m))
         print("Watermarked model Test Accuracy: {}%".format(acc_w))
+        print("Reconstructed Gradient Distortion:", np.mean(np.abs(flatten_global_grad - reconstructed_grad)))
+        reconstructed_grad = torch.tensor(reconstructed_grad, dtype=torch.float32).to(device)
         tools.set_gradient_values(global_model, reconstructed_grad)
         acc_recovered = test_classification(device, global_model, test_loader)
         print("Recovered model Test Accuracy: {}%".format(acc_recovered))
