@@ -38,5 +38,15 @@ def args_parser():
     parser.add_argument('--iid', type=int, default=1,
                         help='Default set to IID. Set to 0 for non-IID.')
     # parser.add_argument('--seed', type=int, default=1, help='random seed')
+
+    # watermark arguments
+    parser.add_argument('--alpha', type=float, default=0.7,
+                        help="$\alpha$ for watermark")
+    parser.add_argument('--delta', type=float, default=1,
+                        help="$\delta$ for watermark")
+    parser.add_argument('--k', type=float, default=0,
+                        help="k for watermark")
+    
+
     args = parser.parse_args()
     return args
