@@ -13,6 +13,7 @@ import tools
 import time
 import copy
 from watermarks.qim import QIM
+from torch.nn.utils import vector_to_parameters
 
 # make sure that there exists CUDA，and show CUDA：
 # print(device)
@@ -173,35 +174,41 @@ if __name__ == '__main__':
         loss = train_parallel(args, global_model, train_loader, optimizer, epoch, scheduler)
         acc = test_classification(device, global_model, test_loader)
         print("Test Accuracy: {}%".format(acc))
+        #-------------------------------------------------------------
         # test watermark etc.
-        alpha = 0.7
-        k = 0
-        d = 20
+        alpha = args.alpha
+        k = args.k
+        d = args.delta
         Watermark = QIM(delta=d)
         flatten_global_grad = tools.get_parameter_values(global_model).cpu().detach().numpy()
         #########################################################
-        # test
-        grad_test = copy.deepcopy(flatten_global_grad) + torch.randn_like(tools.get_parameter_values(global_model)) * 3
-        print('distortion:',np.mean(np.abs(flatten_global_grad - global_w.cpu().detach().numpy())))
-        tools.set_gradient_values(global_model, grad_test)
-        acc_test = test_classification(device, global_model, test_loader)
-        print("Test Accuracy with noise: {}%".format(acc_test))
+        # testnp.random.randn(*a.shape)
+        # print("Param mean:", flatten_global_grad.mean().item())
+        # print("Noise std:", flatten_global_grad.std().item())
+        # grad_test = copy.deepcopy(flatten_global_grad) + np.random.randn(*flatten_global_grad.shape) * 100
+        # print('distortion:',np.mean(np.abs(flatten_global_grad - grad_test)))
+        # model_copy = copy.deepcopy(global_model)
+        # vector_to_parameters(torch.tensor(grad_test,dtype=torch.float32).to(device), model_copy.parameters())
+        # acc_test = test_classification(device, model_copy, test_loader)
+        # print("Test Accuracy with noise: {}%".format(acc_test))
         #########################################################
         # random message
         message = Watermark.random_msg(len(flatten_global_grad))
         # embedding watermark to whole global gradient
         global_w = torch.tensor(Watermark.embed(flatten_global_grad, message, alpha=alpha,k=k),dtype=torch.float32).to(device)
         print('distortion:',np.mean(np.abs(flatten_global_grad - global_w.cpu().detach().numpy())))
-        tools.set_gradient_values(global_model, global_w)
-        acc_w = test_classification(device, global_model, test_loader)
+        model_watermark = copy.deepcopy(global_model)
+        vector_to_parameters(global_w, model_watermark.parameters())
+        acc_w = test_classification(device, model_watermark, test_loader)
         # detect and recover watermark
         global_w = global_w.cpu().detach().numpy()
         reconstructed_grad, m = Watermark.detect(global_w, alpha=alpha,k=k)
         print("Watermark acc:", np.mean(message == m))
         print("Watermarked model Test Accuracy: {}%".format(acc_w))
         print("Reconstructed Gradient Distortion:", np.mean(np.abs(flatten_global_grad - reconstructed_grad)))
-        reconstructed_grad = torch.tensor(reconstructed_grad, dtype=torch.float32).to(device)
-        tools.set_gradient_values(global_model, reconstructed_grad)
-        acc_recovered = test_classification(device, global_model, test_loader)
+        # reconstructed_grad = torch.tensor(reconstructed_grad, dtype=torch.float32).to(device)
+        model_recover = copy.deepcopy(global_model)
+        vector_to_parameters(torch.tensor(reconstructed_grad,dtype=torch.float32).to(device), model_recover.parameters())
+        acc_recovered = test_classification(device, model_recover, test_loader)
         print("Recovered model Test Accuracy: {}%".format(acc_recovered))
         
