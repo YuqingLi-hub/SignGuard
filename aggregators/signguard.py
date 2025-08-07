@@ -45,13 +45,13 @@ class signguard_multiclass(object):
 
         dbscan = 0
         meanshif = int(1-dbscan)
-        masks = []
+        masks = None
         # no need for loop, just one iteration and aggregation don't need multiple iterations
         for it in range(iters):
             # randomly select a portion of consecutive parameters
             idx = torch.randint(0, (num_param - num_spars),size=(1,)).item()
             gradss = grads[:, idx:(idx+num_spars)]
-            masks.append((idx, idx+num_spars))
+            masks = (idx, idx+num_spars)
             # get the sign of the gradients, and sum the sign gradients
             sign_grads = torch.sign(gradss)
             # print("sign_grads", sign_grads)
