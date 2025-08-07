@@ -43,7 +43,7 @@ def args_parser():
     parser.add_argument('--alpha', type=float, default=0.7,
                         help="$\alpha$ for watermark")
     parser.add_argument('--delta', type=float, default=1,
-                        help="$\delta$ for watermark")
+                        help="$delta$ for watermark")
     parser.add_argument('--k', type=float, default=0,
                         help="k for watermark")
     

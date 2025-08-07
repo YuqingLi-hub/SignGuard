@@ -233,9 +233,11 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
         range_scale = 0.2
         scale_delta = (np.linspace(middle-range_scale, middle+range_scale, 200))
         theory = []
+        dm_hat = []
         for sd in scale_delta:
             z_detected, msg_detected = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=sd)
             theory.append(np.mean(np.abs(qim.q_mk - qim.dm_hat)*embedding_alpha/(1-embedding_alpha)))
+            dm_hat.append(np.mean(np.abs(qim.dm_hat)))
             # print(f"Attempting to detect/restore with detection alpha = {a_detect:.2f}")
             # if np.isclose(a_detect, 1, atol=0.005):
             #     recovery_errors.append(np.inf)
@@ -341,8 +343,10 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
         plt.figure(figsize=(12, 6))
         plt.plot(scale_delta*delta, recovery_errors, marker='o', linestyle='-', markersize=4)
         plt.plot(delta, np.mean(np.abs(good_z-x)), marker="o", color="red")
-        plt.plot(scale_delta*delta, theory, label=r"$a/(1-a) Q_m,k(s) - d_m$")
-        plt.plot(scale_delta*delta, theory*(1-embedding_alpha)/embedding_alpha, label=r"$Q_m,k(s) - d_m$")
+        plt.plot(scale_delta*delta, theory, label=r"a/(1-a) Q_m,k(s) - d_m")
+        # unscale_theory = ((1-embedding_alpha)/embedding_alpha)*np.array(theory)
+        # plt.plot(scale_delta*delta, unscale_theory, label=r"$Q_m,k(s) - d_m$")
+        plt.plot(scale_delta*delta,dm_hat, label=r"$\hat{d}_m$")
         # plt.plot(secret_k_sequence, y, label=r"$\left|\frac{x - 0.7}{0.3(1 - x)}\right|$")
         # plt.plot(alphas_to_test_detection, abs(((alphas_to_test_detection-embedding_alpha)/((1-embedding_alpha)*(1-alphas_to_test_detection)))), markersize=4,label='Theoretical Error')
         plt.axvline(x=delta, color='r', linestyle='--', label=f'True delta')

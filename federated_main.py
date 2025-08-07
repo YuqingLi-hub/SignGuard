@@ -169,16 +169,16 @@ if __name__ == '__main__':
             scheduler.step()
 
         return iter_loss
-
+    alpha = args.alpha
+    k = args.k
+    d = args.delta
+    print("Watermarking with alpha: {}, delta: {}, k: {}".format(alpha, d, k))
     for epoch in range(args.epochs):
         loss = train_parallel(args, global_model, train_loader, optimizer, epoch, scheduler)
         acc = test_classification(device, global_model, test_loader)
         print("Test Accuracy: {}%".format(acc))
         #-------------------------------------------------------------
         # test watermark etc.
-        alpha = args.alpha
-        k = args.k
-        d = args.delta
         Watermark = QIM(delta=d)
         flatten_global_grad = tools.get_parameter_values(global_model).cpu().detach().numpy()
         #########################################################
@@ -196,6 +196,17 @@ if __name__ == '__main__':
         message = Watermark.random_msg(len(flatten_global_grad))
         # embedding watermark to whole global gradient
         global_w = torch.tensor(Watermark.embed(flatten_global_grad, message, alpha=alpha,k=k),dtype=torch.float32).to(device)
+        
+        
+        # t_ = torch.randn(len(flatten_global_grad)).cpu().detach().numpy()  # for testing
+        t_ = flatten_global_grad
+        # print(len(t_))
+        w_ = Watermark.embed(t_,m=message,alpha=alpha,k=k)
+        r_w,mm = Watermark.detect(w_,alpha=alpha,k=k)
+        print("Test Reconstructed Gradient Error:", np.mean(np.abs(t_ - r_w)))
+
+
+
         print('distortion:',np.mean(np.abs(flatten_global_grad - global_w.cpu().detach().numpy())))
         model_watermark = copy.deepcopy(global_model)
         vector_to_parameters(global_w, model_watermark.parameters())
