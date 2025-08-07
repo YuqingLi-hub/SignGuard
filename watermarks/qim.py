@@ -200,7 +200,7 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     print(f"")
     y_watermarked = qim.embed(x, msg, alpha=embedding_alpha, k=true_k)
     print('Watermarked y (first 5):', y_watermarked[:5])
-    
+    print('Distortion: ',y_watermarked[:5]-x[:5])
     initial_distortion = np.mean(np.abs(x - y_watermarked))
     good_z, good_msg = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=1)
     print(f"Initial Embedding Distortion (Abs Diff): {initial_distortion:.6f}")
@@ -402,9 +402,10 @@ def main(args):
     # for a in np.arange(0.50, 1.01, 0.05):
         # print(f"Testing QIM with alpha={a}")
         # alphas, error, msg_error = test_qim_1(delta=d, embedding_alpha=a)
-    test_qim_1(delta=d, embedding_alpha=a,k=k,plot=True,test=True)
-    # for d in range(1, 20):
-    #     test_qim_1(delta=d, embedding_alpha=a, k=k, plot=False, test=False)
+    # test_qim_1(delta=d, embedding_alpha=a,k=k,plot=True,test=True)
+    ds = np.linspace(0.5, 20, 50)
+    for d in ds:
+        test_qim_1(delta=d, embedding_alpha=a, k=k, plot=False, test=False)
     
     # # x = np.linspace(0.01, 0.99, 1000)  # Avoid x=1 to prevent division by zero
     # x = np.arange(0.5, 1.00, 0.01)
