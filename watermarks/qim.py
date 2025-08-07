@@ -30,6 +30,8 @@ class QIM:
         # dm = (-1)**(m+1) * d/2.
         dm = m*d/2.
         q_mk = quanti(x-dm-k, d) + dm + k
+        dis = np.round((x-dm-k) / d) - (x-dm-k)/d
+        print('Theory Embedding distortion: $a*delta*(frac((s-d_m-k)/delta))', alpha*d*dis)
         self.q_mk = q_mk
         self.x = x
         y = q_mk * alpha + x * (1 - alpha)
@@ -57,9 +59,12 @@ class QIM:
         # print(d,((dm_hat/d)%1)[:5],(k%d))
         self.dm_hat = dm_hat
         # print('dm_hat',(dm_hat/d))
-        # print(self.selective_round(dm_hat/d)[:5])
-        
-        m_detected = np.array([1 if not np.isclose(i,(k%d)) else 0 for i in self.selective_round(dm_hat/d)%1])
+        # print((self.selective_round(dm_hat/d)%1)[:5])
+        # print(k%d)
+        if d>k:
+            m_detected = np.array([1 if not i>= (1-i) else 0 for i in self.selective_round(dm_hat/d)%1])
+        else:
+            m_detected = np.array([1 if i>= (1-i) else 0 for i in self.selective_round(dm_hat/d)%1])
         # print('Detected message:',m_detected[:5])
         # print('y-dm_hat',abs(z-self.q_mk))
         self.y_dm_hat = abs(z-self.q_mk)
@@ -72,7 +77,7 @@ class QIM:
         m_detected = m_detected.reshape(shape)
         return z_hat, m_detected.astype(int)
     
-    def selective_round(self,x, threshold=0.9):
+    def selective_round(self,x, threshold=0.99):
         return np.floor(x) + np.where((x % 1) >= threshold, 1, (x % 1))
     def random_msg(self, l):
         """
@@ -180,7 +185,7 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     # delta = 1.0 # quantization step (use float for consistency)
     qim = QIM(delta)
 
-    x = np.random.uniform(0, 255, l).astype(float) # host sample
+    x = np.random.uniform(-500, 500, l).astype(float) # host sample
     # x = np.linspace(-5, 5, l).astype(float)  # host sample
     print('Original x (first 5):', x[:5])
 
@@ -403,7 +408,8 @@ def main(args):
         # print(f"Testing QIM with alpha={a}")
         # alphas, error, msg_error = test_qim_1(delta=d, embedding_alpha=a)
     # test_qim_1(delta=d, embedding_alpha=a,k=k,plot=True,test=True)
-    ds = np.linspace(0.5, 20, 50)
+    # ds = np.linspace(0.5, 20, 50)
+    ds = range(1,20)
     for d in ds:
         test_qim_1(delta=d, embedding_alpha=a, k=k, plot=False, test=False)
     
