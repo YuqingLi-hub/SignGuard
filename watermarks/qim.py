@@ -25,23 +25,25 @@ class QIM:
         # make x type float
         x = x.astype(float)
         # state alpha
+        scale = self.alpha_func(alpha=alpha)
         d = self.delta
         # get d_0 and d_1 according to m
         # dm = (-1)**(m+1) * d/2.
         dm = m*d/2.
         q_mk = quanti(x-dm-k, d) + dm + k
-        dis = np.round((x-dm-k) / d) - (x-dm-k)/d
-        print('Theory Embedding distortion: $a*delta*(frac((s-d_m-k)/delta))', alpha*d*dis)
+        # dis = np.round((x-dm-k) / d) - (x-dm-k)/d
+        # print('Theory Embedding distortion: $a*delta*(frac((s-d_m-k)/delta))', alpha*d*dis)
         self.q_mk = q_mk
         self.x = x
-        y = q_mk * alpha + x * (1 - alpha)
+        y = q_mk * scale + x * (1 - scale)
         return y
     
     # def set_delta(self, x,m,k=0):
     #     d = self.delta
     #     dm = (-1)**(m+1) * d/4.
     #     return quanti(x-dm-k, d) + dm + k
-    
+    def alpha_func(self, alpha):
+        return alpha
     def detect(self, z,alpha=1,k=0,scale_delta=1):
         """
         z is the received vector, potentially modified
@@ -51,6 +53,7 @@ class QIM:
         # print(f"Detecting with delta={d}, alpha={alpha}, k={k}")
         M_cls = 2.
         shape = z.shape
+        scale = self.alpha_func(alpha=alpha)
         z = z.flatten()
         z = z.astype(float)
         m_detected = np.zeros_like(z, dtype=float)
@@ -60,25 +63,129 @@ class QIM:
         self.dm_hat = dm_hat
         # print('dm_hat',(dm_hat/d))
         # print((self.selective_round(dm_hat/d)%1)[:5])
-        # print(k%d)
-        if d>k:
-            m_detected = np.array([1 if not i>= (1-i) else 0 for i in self.selective_round(dm_hat/d)%1])
-        else:
-            m_detected = np.array([1 if i>= (1-i) else 0 for i in self.selective_round(dm_hat/d)%1])
+        # print(np.unique((self.selective_round(dm_hat/d)%1)))
+        self.m_c = self.selective_round(dm_hat/d)%1
         # print('Detected message:',m_detected[:5])
         # print('y-dm_hat',abs(z-self.q_mk))
         self.y_dm_hat = abs(z-self.q_mk)
-        if np.isclose(alpha, 1):
-            print(f'alpha is {1}, no restoration')
-            z_hat = z - alpha * dm_hat
-        else:
-            # print(f'alpha={alpha}, restoring original signal')
-            z_hat = (z-alpha * dm_hat)/ (1-alpha)
+        # if np.isclose(alpha, 1):
+        #     print(f'alpha is {1}, no restoration')
+        #     z_hat = z - alpha * dm_hat
+        # else:
+        #     # print(f'alpha={alpha}, restoring original signal')
+        z_hat = (z-scale * dm_hat)/ (1-scale)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        # # print(k%d)
+        # # m_detected = np.array([0 if abs(i - d[0]) < abs(i - d[1]) else 0 for i in self.selective_round(dm_hat/d)%1])
+        d_values = [0,d/2.]
+        rough_m = np.round((self.selective_round((dm_hat-k)/d)%1)*2)
+        # if d<k:
+        #     print('m = 1, if 0, =0 if 0.5')
+        #     m_detected = np.array([1 if not i>= (1-i) else 0 for i in self.selective_round((dm_hat-k)/d)%1])
+        # else:
+        #     print('m = 0, if 0, =1 if 0.5')
+        #     m_detected = np.array([1 if i>= (1-i) else 0 for i in self.selective_round((dm_hat-k)/d)%1])
+        m_detected = rough_m
+        # # print(m_detected[:5])
+        # effective_dither = (dm_hat-k)%d
+        # print(effective_dither[:5])
+        # dist_0 = np.abs(effective_dither - d_values[0])
+        # dist_1 = np.abs(effective_dither - d_values[1])
+        # epsilon = 1e-9  # A small tolerance for floating-point comparison
+        
+        # m_detected = np.zeros_like(z, dtype=int)
+        
+        # # If dist_0 is definitively smaller, it's a 0.
+        # m_detected[dist_0 < dist_1 - epsilon] = 0
+        
+        # # If dist_1 is definitively smaller, it's a 1.
+        # m_detected[dist_1 < dist_0 - epsilon] = 1
+        
+        # # If they are very close, the result is ambiguous. Let's default to a bit (e.g., 0).
+        # # In this specific R-QIM implementation, this shouldn't happen with noiseless data,
+        # # but it's a good practice for robustness.
+        # m_detected[np.abs(dist_0 - dist_1) < epsilon] = 0
+
+
+
+
+        # m_detected = np.where(dist_0 < dist_1, 0, 1)
+        # print(m_detected[:5])
+        # dm_0 = d_values[0]
+        # q_mk_0_hypo = quanti(z_hat - dm_0 - k, d) + dm_0 + k
+        # dist_0 = np.abs(z - (alpha * q_mk_0_hypo + (1 - alpha) * z_hat))
+
+        # # Hypothesis for m=1:
+        # dm_1 = d_values[1]
+        # q_mk_1_hypo = quanti(z_hat - dm_1 - k, d) + dm_1 + k
+        # dist_1 = np.abs(z - (alpha * q_mk_1_hypo + (1 - alpha) * z_hat))
+        
+        # # The detected bit is the one that minimizes the distance
+        # m_detected = np.where(dist_0 < dist_1, 0, 1)
+        # receiver_delta_prime = d / (1 - alpha)
+        # Alternative (and more direct) detection method:
+        # Which hypothetical dither value is closest to the watermarked value?
+        # d_prime is the receiver's effective dither from Eq. 11
+        # 
+        # d_prime = (dm_hat - k) % receiver_delta_prime
+        # print(d_prime[:5])
+        # m_detected = np.where(np.abs(d_prime) < np.abs(d_prime - d_values[1]), 0, 1)
+        # print((m_detected[:5],m_detected_alt[:5]))
+
+
+        # receiver_delta_prime = d / (1 - alpha)
+        # Step 1: Detect the message bit 'm'
+        # We find which of the two possible dithered lattices 'y' is closest to.
+        # Let's define the two receiver-side quantized values that 'y' could have come from.
+        
+        # # Hypothesis 1 (assuming m=0 was embedded):
+        # # The dither for m=0 is d_0 = self.d_values[0].
+        # q_prime_0 = quanti(z - k - d_values[0], receiver_delta_prime) + k + d_values[0]
+        
+        # # Hypothesis 2 (assuming m=1 was embedded):
+        # # The dither for m=1 is d_1 = self.d_values[1].
+        # q_prime_1 = quanti(z - k - d_values[1], receiver_delta_prime) + k + d_values[1]
+        
+        # # The detected bit is the one that minimizes the distance to 'y'.
+        # dist_0 = np.abs(z - q_prime_0)
+        # dist_1 = np.abs(z - q_prime_1)
+        
+        # m_detected = np.where(dist_0 < dist_1, 0, 1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
         m_detected = m_detected.reshape(shape)
         return z_hat, m_detected.astype(int)
     
     def selective_round(self,x, threshold=0.99):
-        return np.floor(x) + np.where((x % 1) >= threshold, 1, (x % 1))
+        frac = x%1
+        if np.allclose(frac,0.5):
+            frac = 0.5
+        if np.allclose(frac,0):
+            frac = 0
+        return np.floor(x) + np.where((x % 1) >= threshold, 1, (frac))
     def random_msg(self, l):
         """
         returns: a random binary sequence of length l
@@ -89,7 +196,7 @@ def quanti(x, delta):
     quantizes the input x with step size delta
     """
     # the delta*floor[x/delta]
-    
+    # so floor will increase the distortion
     return np.round(x / delta) * delta
 
 
@@ -185,7 +292,8 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     # delta = 1.0 # quantization step (use float for consistency)
     qim = QIM(delta)
 
-    x = np.random.uniform(-500, 500, l).astype(float) # host sample
+    # x = np.random.uniform(-500, 500, l).astype(float) # host sample
+    x = np.random.randn(l)
     # x = np.linspace(-5, 5, l).astype(float)  # host sample
     print('Original x (first 5):', x[:5])
 
@@ -210,9 +318,12 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     good_z, good_msg = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=1)
     print(f"Initial Embedding Distortion (Abs Diff): {initial_distortion:.6f}")
     print(f"Detected Message Accuracy: {np.mean(msg == good_msg):.4f}")
-    # print(qim.dm_hat[msg != good_msg])
-    # print(qim.dm_hat[msg != good_msg]%1)
+    # print(qim.m_c[msg != good_msg])
+    # # print((1-qim.m_c)[msg != good_msg])
+    # # # print(qim.dm_hat[msg != good_msg]%1)
+    # # print()
     # print(msg[msg != good_msg])
+    # print(good_msg[msg != good_msg])
     print(f'Recovery error when all correct: {np.mean(np.abs(good_z - x)):.6f}')
 
 
@@ -225,7 +336,7 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
         message_accuracies = [] # This will store sum(msg==msg_detected)/len(msg)
 
         # print("\n--- Testing Detection/Restoration with Varying Alphas ---")
-        # alphas_to_test_detection =np.linspace(-5, 5, 1000)
+        # alphas_to_test_detection =np.linspace(-2, 2, 300)
         # for a_detect in alphas_to_test_detection:
         #     z_detected, msg_detected = qim.detect(y_watermarked, alpha=a_detect, k=true_k)
         # secret_k_sequence = np.linspace(-5, 5, 1000)
@@ -278,13 +389,15 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
         # # --- Plotting Results ---
         # from matplotlib import pyplot as plt
         # # print(abs((alphas_to_test_detection-embedding_alpha)/(embedding_alpha*(1-alphas_to_test_detection)))[:10])
-        # y = np.abs((alphas_to_test_detection - embedding_alpha) / ((1 - embedding_alpha) * (1 - alphas_to_test_detection)))
+        # scaled_alpha = qim.alpha_func(embedding_alpha)
+        # y = np.abs((alphas_to_test_detection - scaled_alpha) / ((1 - scaled_alpha) * (1 - alphas_to_test_detection)))
+        
         # # Plot Recovery Error
         # plt.figure(figsize=(12, 6))
         # plt.plot(alphas_to_test_detection, recovery_errors, marker='o', linestyle='-', markersize=4)
         # plt.plot(alphas_to_test_detection, y, label=r"$\left|\frac{x - 0.7}{0.3(1 - x)}\right|$")
         # # plt.plot(alphas_to_test_detection, abs(((alphas_to_test_detection-embedding_alpha)/((1-embedding_alpha)*(1-alphas_to_test_detection)))), markersize=4,label='Theoretical Error')
-        # plt.axvline(x=embedding_alpha, color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
+        # plt.axvline(x=np.sinc(embedding_alpha), color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
         # plt.title(f'Recovery Error vs. Detection Alpha (Delta={delta}, True Embed Alpha={embedding_alpha})')
         # plt.xlabel('Detection Alpha ($a$)')
         # plt.ylabel('Mean Absolute Recovery Error ($|\\hat{s} - s|$ mean)')
@@ -304,7 +417,7 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
         # plt.grid(True)
         # plt.legend()
         # plt.tight_layout()
-        # plt.savefig(f"./outputs/message_accuracy_alpha_{embedding_alpha}.png")
+        # plt.savefig(f"./outputs/qim/{date}/message_accuracy_alpha_{embedding_alpha}.png")
         # plt.close()
     #     #################################################
     #     from matplotlib import pyplot as plt
@@ -408,6 +521,7 @@ def main(args):
         # print(f"Testing QIM with alpha={a}")
         # alphas, error, msg_error = test_qim_1(delta=d, embedding_alpha=a)
     # test_qim_1(delta=d, embedding_alpha=a,k=k,plot=True,test=True)
+    # test_qim_1(delta=d, embedding_alpha=a,k=k,plot=False,test=False)
     # ds = np.linspace(0.5, 20, 50)
     ds = range(1,20)
     for d in ds:
@@ -435,56 +549,121 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # import numpy as np
+    import numpy as np
 
-    # class RQIM:
-    #     def __init__(self, delta):
-    #         self.delta = delta
+    class RQIM:
+        def __init__(self, delta):
+            self.delta = delta
 
-    #     def quantize(self, x, delta):
-    #         """Uniform quantizer."""
-    #         return np.floor(x / delta) * delta
+        def quantize(self, x, delta):
+            """Uniform quantizer."""
+            return np.floor(x / delta) * delta
 
-    #     def embed(self, s, m, alpha=0.5, k=0):
-    #         """
-    #         Embeds message m into signal s.
-    #         s: signal array
-    #         m: binary message array (same shape as s)
-    #         alpha: embedding strength
-    #         k: dithering key
-    #         """
-    #         d = self.delta
-    #         # dm = m * d / 2  # dm = -Δ/4 if m=0, +Δ/4 if m=1
-    #         dm = (-1) ** (m + 1) * d / 4  # dm = -Δ/4 if m=0, +Δ/4 if m=1
-    #         q = self.quantize(s - dm - k, d) + dm + k
-    #         s_rqim = alpha * q + (1 - alpha) * s
-    #         return s_rqim
+        def embed(self, s, m, alpha=0.5, k=0):
+            """
+            Embeds message m into signal s.
+            s: signal array
+            m: binary message array (same shape as s)
+            alpha: embedding strength
+            k: dithering key
+            """
+            d = self.delta
+            # dm = m * d / 2  # dm = -Δ/4 if m=0, +Δ/4 if m=1
+            dm = (-1) ** (m + 1) * d / 4  # dm = -Δ/4 if m=0, +Δ/4 if m=1
+            q = self.quantize(s - dm - k, d) + dm + k
+            s_rqim = alpha * q + (1 - alpha) * s
+            return s_rqim
 
-    #     def detect(self, y, alpha=0.5, k=0):
-    #         """
-    #         Recovers signal and message from received vector y.
-    #         Returns: reconstructed signal s_hat and detected message m_hat.
-    #         """
-    #         d = self.delta
-    #         M = 2
-    #         delta_M = d / M
+        def detect(self, y, alpha=0.5, k=0):
+            """
+            Recovers signal and message from received vector y.
+            Returns: reconstructed signal s_hat and detected message m_hat.
+            """
+            d = self.delta
+            M = 2
+            delta_M = d / M
+            z0 = self.embed(y, 0)
+            z1 = self.embed(y, 1)
+            d0 = np.abs(y - z0)
+            d1 = np.abs(y - z1)
+            # print(d0[:5],d1[:5])
+            # Step 1: Estimate dm_hat using Eq. (11)
+            q_y = self.quantize((y - k), delta_M) + k
+            print((y-q_y)[:5])
+            m_detected = np.zeros_like(y, dtype=float)
+            z_detected = np.zeros_like(y, dtype=float)
+            gen = zip(range(len(y)), d0, d1)
+            for i, dd0, dd1 in gen:
+                if dd0 < dd1:
+                    m_detected[i] = 0
+                    z_detected[i] = z0[i]
+                else:
+                    m_detected[i] = 1
+                    z_detected[i] = z1[i]
+            # m_hat = np.array([1 if i>0.5-i else 0 for i in y-q_y])
+            # print(m_detected[:5],z_detected[:5])
+            dm = (-1) ** (m_detected + 1) * d / 4 
+            # print(d/4)
+            # print(dm_hat[:5])
+            # print((q_y/d)[:5])
+            # # Step 2: Classify m_hat based on whether dm_hat is closer to -d/4 or +d/4
+            # m_hat = np.where(dm_hat -d/4 > k, 1, 0)
+            q_est = (y - (1-alpha)*y) / alpha  # initial guess
+            # Snap q_est to nearest valid bin for given m
+            q = self.quantize(q_est - dm - k, d) + dm + k
+            # Recover s exactly
+            s_hat = (y - alpha*q) / (1 - alpha)
+            return s_hat, m_detected.astype(int)
+        
+        import numpy as np
 
-    #         # Step 1: Estimate dm_hat using Eq. (11)
-    #         q_y = self.quantize((y - k), delta_M) + k
-    #         dm_hat = q_y % d
-    #         print(dm_hat[:5])
-    #         print((q_y//delta_M)[:5])
-    #         # Step 2: Classify m_hat based on whether dm_hat is closer to -d/4 or +d/4
-    #         m_hat = np.where(dm_hat > k, 1, 0)
+    # class QIM_Test:
+    #     def selective_round(self, x, threshold=0.99):
+    #         return np.floor(x) + np.where((x % 1) >= threshold, 1, (x % 1))
 
-    #         # Step 3: Reconstruct s_hat using Eq. (13)
-    #         s_hat = (y - alpha * q_y) / (1 - alpha)
+    # def test_m_detect(input_val, selective_round_instance):
+    #     """Tests the m_detect logic on a single input value."""
+    #     # This is the core logic from your m_detect line
+    #     result = np.round((selective_round_instance.selective_round(input_val) % 1) * 2)
+    #     return result
 
-    #         return s_hat, m_hat.astype(int)
+    # # Create an instance of the class to access the method
+    # qim_tester = QIM_Test()
+
+    # print("--- Testing Edge Cases for m_detect ---")
+
+    # # Test 1: Values near the dither boundary
+    # val_dither_boundary_low = 12.249999999999999
+    # val_dither_boundary_high = 12.250000000000001
+    # val_dither_boundary_exact = 12.25
+
+    # print(f"Input: {val_dither_boundary_low:.15f} -> Output: {test_m_detect(val_dither_boundary_low, qim_tester)}") # Expected: 0
+    # print(f"Input: {val_dither_boundary_high:.15f} -> Output: {test_m_detect(val_dither_boundary_high, qim_tester)}") # Expected: 1
+    # print(f"Input: {val_dither_boundary_exact:.15f} -> Output: {test_m_detect(val_dither_boundary_exact, qim_tester)}") # Expected: 0 (due to np.round tie-breaking)
+
+    # # Test 2: Values near an integer (should be a bit 0 case)
+    # val_bit_0_low = 12.000000000000001
+    # val_bit_0_high = 11.999999999999999
+    # print(f"Input: {val_bit_0_low:.15f} -> Output: {test_m_detect(val_bit_0_low, qim_tester)}") # Expected: 0
+    # print(f"Input: {val_bit_0_high:.15f} -> Output: {test_m_detect(val_bit_0_high, qim_tester)}") # Expected: 0
+
+    # # Test 3: Values near a 0.5 boundary (should be a bit 1 case)
+    # val_bit_1_low = 12.500000000000001
+    # val_bit_1_high = 12.499999999999999
+    # print(f"Input: {val_bit_1_low:.15f} -> Output: {test_m_detect(val_bit_1_low, qim_tester)}") # Expected: 1
+    # print(f"Input: {val_bit_1_high:.15f} -> Output: {test_m_detect(val_bit_1_high, qim_tester)}") # Expected: 1
+
+    # # Test 4: Values near selective_round's threshold (0.99)
+    # # Note: This is an important edge case to test your specific rounding method.
+    # val_selective_low = 12.989999999999999
+    # val_selective_high = 12.990000000000001
+    # print(f"Input: {val_selective_low:.15f} -> Output: {test_m_detect(val_selective_low, qim_tester)}") # Expected: 1 (from 0.98 -> 0.96 * 2 -> 1.92 -> 2 -> 0)
+    # print(f"Input: {val_selective_high:.15f} -> Output: {test_m_detect(val_selective_high, qim_tester)}") # Expected: 1 (from 13 -> 0 -> 0)
     # rqim = RQIM(delta=1.0)
     # s = np.random.randn(1000)
     # m = np.random.randint(0, 2, size=s.shape)
-    # print(m[:5])
+    # # print(m[:5])
+    # print('x: ',s[:5])
     # alpha = 0.51
     # k = 0
 
@@ -493,10 +672,10 @@ if __name__ == "__main__":
 
     # # Add noise (optional)
     # y_noisy = y + np.random.normal(0, 0.01, size=y.shape)
-
+    # # y_noisy = y
     # # Detect
     # s_hat, m_hat = rqim.detect(y_noisy, alpha=alpha, k=k)
-
+    # print((y_noisy-s_hat)[:5])
     # # Evaluation
     # print("Message recovery accuracy:", np.mean(m_hat == m))
     # print("Signal reconstruction error (MSE):", np.mean((s_hat - s) ** 2))

@@ -29,6 +29,7 @@ class AlignIns(object):
         major_sign = torch.sign(torch.sum(torch.sign(inter_model_updates), dim=0))
         cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
         for i in range(len(inter_model_updates)):
+            # k largest weights
             _, init_indices = torch.topk(torch.abs(inter_model_updates[i]), int(len(inter_model_updates[i]) * sparsity))
 
             mpsa_list.append((torch.sum(torch.sign(inter_model_updates[i][init_indices]) == major_sign[init_indices]) / torch.numel(inter_model_updates[i][init_indices])).item())

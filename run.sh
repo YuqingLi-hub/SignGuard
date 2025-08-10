@@ -19,5 +19,6 @@ source /fred/oz410/venv/pytorch/bin/activate
 JOB_NAME=$1  
 # ATTACK_TYPE=$2
 # python -u federated_main.py --agg_rule SignGuard --attack "$ATTACK_TYPE"
-python -u federated_main.py --agg_rule SignGuard --alpha 0.7 --delta 1 --k 0
+# python -u federated_main.py --agg_rule SignGuard --alpha 0.7 --delta 1 --k 0
+python -u federated_main.py --agg_rule SignGuard --alpha 0.51 --delta 0.05 --k 0
 # python -u federated_main.py --agg_rule AlignIns --attack "$ATTACK_TYPE" --local_iter 2
