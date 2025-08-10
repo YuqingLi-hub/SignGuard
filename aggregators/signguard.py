@@ -19,7 +19,7 @@ class signguard_multiclass(object):
         """
         # initialization
         device = gradients[0][0].device
-        torch.manual_seed(2021)
+        # torch.manual_seed(2021)
         num_users = len(gradients)
         all_set = set([i for i in range(num_users)])
         iters = 1
@@ -108,6 +108,7 @@ class signguard_multiclass(object):
         
         global_grad = grads_clip[benign_idx].mean(dim=0)
         self.masks = masks
+        print('masks:', self.masks)
         return global_grad, benign_idx, byz_num/f # this is the attack success rate
 
 
