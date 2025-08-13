@@ -11,10 +11,14 @@ class FLGMM():
         self.r = []
         self.p = []
         self.f1 = []
+        self.o = 0
+        self.distances_matrix = []
+
     def aggregate(self,gradients,f=10,iteration=1,ccepochs=50):
         num_users = len(gradients)
         save_dir = 'outputs/FLGMM/'
-        distances_matrix = [[] for _ in range(num_users)]
+        if len(self.distances_matrix) != num_users:
+            self.distances_matrix = [[] for _ in range(num_users)]
         distances_matrix_this_round = []
         normal_id = []
         # normal_clients_dis = []
@@ -25,6 +29,8 @@ class FLGMM():
         w_glob = FedAvg_0(gradients)
         excluded = []
         noisy_this_round = []
+        noisy_clients = [i for i in range(f)]
+        # Calculate the euclidean distance between local and centroid weights
         for idx, w_local in enumerate(gradients):
             distance = euclidean_distance(w_local, w_glob)
             distances_matrix_this_round.append(distance)
@@ -32,14 +38,15 @@ class FLGMM():
         distances = distances_matrix_this_round
         distances_array = np.array(distances).reshape(-1, 1)
 
-        # Utilize GMM
+        # Utilize GMM to find the largest cluster, return all the weights follows largest cluster
         largest_cluster_data, bounds, means, covariances, weights = decompose_normal_distributions(distances_array)
         print(len(largest_cluster_data))
         mean = np.mean(largest_cluster_data)
         std = np.std(largest_cluster_data)
-
+        # use mean and std to normalize the largest cluster, and store them into distanc_matrix for SPC
         for idx in range(num_users):
-            distances_matrix[idx].append((distances[idx]-mean)/std)
+            self.distances_matrix[idx].append((distances[idx]-mean)/std)
+            # if during the initial rounds, directly use GMM results to select normal clients
             if distances_matrix_this_round[idx] in largest_cluster_data and iteration < ccepochs:
                 normal_id.append(idx)
 
@@ -64,7 +71,8 @@ class FLGMM():
             plt.savefig(os.path.join(save_dir, 'GMM_distance_distribution_with_GMM_10rounds.png'))
             upper_bound = bounds[1]
             lower_bound = bounds[0]
-            for idx, client_distances in enumerate(distances_matrix):
+            # use upper bounds to filter out the clients in the largest cluster
+            for idx, client_distances in enumerate(self.distances_matrix):
                 normal_dis[idx] = [d for d in client_distances if d <= upper_bound]
             flat_distances1 = [distance for client_list in normal_dis for distance in client_list]
             plt.figure(figsize=(10, 6))
@@ -75,20 +83,22 @@ class FLGMM():
             plt.ylabel('Density')
             plt.savefig(os.path.join(save_dir, f'Final_distance_distribution_10round.png'))
             plt.close()
-
+        # when the initial rounds is over, use GMM results as reference
         if iteration == ccepochs:
-            normalid = []
-            f_distances_matrix = [[] for _ in range(num_users)]
-            all_distances = [distance for client_distances in distances_matrix for distance in client_distances]
+            # normalid = []
+            # f_distances_matrix = [[] for _ in range(num_users)]
+            # for each distance in initial rounds (normalized)
+            all_distances = [distance for client_distances in self.distances_matrix for distance in client_distances]
             distances_array = np.array(all_distances)
 
-            # Utilize GMM again
+            # Utilize GMM again, find the largest cluster and its bounds
             largest_cluster_data, bounds, means, covariances, weights = decompose_normal_distributions(distances_array)
             upper_bound = bounds[1]
             lower_bound = bounds[0]
-            for idx, client_distances in enumerate(distances_matrix):
+            # use the upper bounds to filter out the clients in the largest cluster
+            for idx, client_distances in enumerate(self.distances_matrix):
                 normal_dis[idx] = [d for d in client_distances if d <= upper_bound ]
-            flat_distances3 = [distance for client_list in distances_matrix for distance in client_list]
+            flat_distances3 = [distance for client_list in self.distances_matrix for distance in client_list]
             plt.figure(figsize=(10, 6))
             plt.hist(flat_distances3, bins=200, color='grey', edgecolor='black', density=True, alpha=0.6)
             x = np.linspace(min(distances_array), max(distances_array), 1000)
@@ -116,55 +126,57 @@ class FLGMM():
             plt.savefig(os.path.join(save_dir, f'Final_distance_distribution_round.png'))
             plt.close()
 
-            # Erase clients in the component with a lager mean
+            # Erase clients in the component with a lager mean, by using GMM again on largest cluster
             largest_cluster_data_2, bounds_2, means, covariances, weights = decompose_normal_distributions(
                 largest_cluster_data)
             upper_bound_2 = bounds[1]
             lower_bound_2 = bounds[0]
-            for idx, client_distances in enumerate(distances_matrix):
+            for idx, client_distances in enumerate(self.distances_matrix):
                 normal_dis[idx] = [d for d in client_distances if d <= upper_bound_2]
-
-            client_means = [np.mean(distances) for distances in distances_matrix]
+            # find the average distance of each client
+            client_means = [np.mean(distances) for distances in self.distances_matrix]
+            # determine the upper control limit (UCL) of the entire distance
             excluded_clients, UCL, LCL = plot_control_chart(np.arange(len(client_means)), client_means, normal_dis, save_dir)
             print("GMM detects:", excluded_clients)
-            noisy_clients = [i for i in range(f)]
-            r.append(calculate_accuracy(excluded_clients, noisy_clients)[0])
-            p.append(calculate_accuracy(excluded_clients, noisy_clients)[1])
+            
+            self.r.append(calculate_accuracy(excluded_clients, noisy_clients)[0])
+            self.p.append(calculate_accuracy(excluded_clients, noisy_clients)[1])
             recall = calculate_accuracy(excluded_clients, noisy_clients)[0]
             pre = calculate_accuracy(excluded_clients, noisy_clients)[1]
             f = 2 * recall * pre / (recall + pre)
-            f1.append(f)
-            print("Initial recall:", r[0])
-            print("Initial precision:", p[0])
-            print("Initial f1score:", f1[0])
+            self.f1.append(f)
+            print("Initial recall:", self.r[0])
+            print("Initial precision:", self.p[0])
+            print("Initial f1score:", self.f1[0])
 
         if iteration > ccepochs:
-            for idx, client_distances in enumerate(distances_matrix):
+            # use UCL to determine the normal clients
+            for idx, client_distances in enumerate(self.distances_matrix):
                 if client_distances[-1] < UCL:
                     normal_id.append(idx)
                 else:
                     excluded.append(idx)
             excluded_clients = excluded
             print("Anomaly:", excluded)
-            r.append(calculate_accuracy(excluded_clients, noisy_this_round)[0])
-            p.append(calculate_accuracy(excluded_clients, noisy_this_round)[1])
+            self.r.append(calculate_accuracy(excluded_clients, noisy_this_round)[0])
+            self.p.append(calculate_accuracy(excluded_clients, noisy_this_round)[1])
             recall = calculate_accuracy(excluded_clients, noisy_clients)[0]
             pre = calculate_accuracy(excluded_clients, noisy_clients)[1]
             f = 2 * recall * pre / (recall + pre)
-            f1.append(f)
-            print("Recall:", r[o])
-            print("Precision:", p[o])
-            print("f1score:", f1[o])
-            o += 1
+            self.f1.append(f)
+            print("Recall:", self.r[o])
+            print("Precision:", self.p[o])
+            print("f1score:", self.f1[o])
+            self.o += 1
 
         # Update global model
         if iteration < ccepochs:
             gradients_used = [gradients[i] for i in range(len(gradients)) if i in normal_id]
-            print('numbers of participants:',len(gradients_used))
+            # print('numbers of participants:',len(gradients_used))
 
         else:
             gradients_used = [gradients[i] for i in range(len(gradients)) if i not in excluded_clients]
-            print('numbers of participants:', len(gradients_used))
+            # print('numbers of participants:', len(gradients_used))
 
         if len(gradients_used) > 0:
             w_glob = FedAvg_0(gradients_used)
@@ -183,7 +195,7 @@ class FLGMM():
         #         global_acc, global_loss = test_img(net_glob, dataset_test, args)
         #         global_acctotal.append(global_acc)
         #         global_losses.append(global_loss)
-
+        print(normal_id)
         return w_glob,normal_id,excluded_clients/f
     
 def euclidean_distance(local_weights, global_weights):
@@ -216,6 +228,10 @@ def calculate_accuracy(detected_noisy_clients, actual_noisy_clients):
 
     return R,P
 def decompose_normal_distributions(data, n_components=2):
+    '''
+    Decompose the data into two normal distributions using Gaussian Mixture Model (GMM).
+    Returns the data points in the largest cluster, bounds of the cluster, means, covariances, and weights of the GMM.
+    '''
     gmm = GaussianMixture(n_components=n_components, random_state=0)
     gmm.fit(data.reshape(-1, 1))
     labels = gmm.predict(data.reshape(-1, 1))
@@ -233,11 +249,12 @@ def plot_control_chart(client_id, client_means, distances_matrix, save_dir, L=3)
     std = np.std(distances)
     mean = np.mean(distances)
     # the control limit to select clients, in our study LCL is not used
-    UCL = mean + L *std
+    UCL = mean + L *std # Upper Control Limit, sort like the upper bound
     LCL = mean - L *std
     
     plt.figure(figsize=(10, 6))
     plt.plot(client_id, client_means, marker='o', linestyle='-', color='blue', label='Average Distance')
+    # if the client weight mean is larger than the upper control limit, mark it as anomaly
     for idx, client_mean in zip(client_id, client_means):
         if client_mean > UCL:
             ano.append(idx)
