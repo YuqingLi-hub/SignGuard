@@ -7,6 +7,7 @@ from .Bulyan import *
 from .signguard import *
 from .DnC import *
 from .AlignIns import AlignIns
+from .FLGMM import *
 
 def aggregator(rule):
     # gradient aggregation rule
@@ -21,6 +22,7 @@ def aggregator(rule):
            'SignGuard-Sim': signguard_multiclass_plus1,
            'SignGuard-Dist': signguard_multiclass_plus2,
            'AlignIns': AlignIns,
+           'FLGMM': FLGMM,
     }
 
     return GAR[rule]
