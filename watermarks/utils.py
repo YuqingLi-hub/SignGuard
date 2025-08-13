@@ -9,6 +9,7 @@ class RQIM:
         return np.floor(x / delta) * delta
 
     def embed(self, s, m, alpha=0.5, k=0):
+        # TODO embedding probabably wrong, distortion not correct
         """
         Embeds message m into signal s.
         s: signal array

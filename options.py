@@ -6,6 +6,8 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # federated arguments
+    parser.add_argument('--job', type=str, default='RQimTestDefault',
+                        help="name of the job")
     parser.add_argument('--epochs', type=int, default=160,
                         help="number of training epochs")
     parser.add_argument('--num_users', type=int, default=50,

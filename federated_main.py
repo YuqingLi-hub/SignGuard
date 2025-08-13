@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import MultiStepLR, ExponentialLR
 from data_loader import get_dataset
 from running import test_classification, benignWorker, byzantineWorker
-from models import CNN, ResNet18, ResNet9
+from models import CNN, ResNet18, ResNet9, SmallVGG, MLP
 from aggregators import aggregator
 from attacks import attack
 from options import args_parser
@@ -61,6 +61,7 @@ def embedding_watermark_on_position(masks,whole_grads,args):
     ini_delta = args.delta
     # print(whole_grads.shape)
     grad_unwater = copy.deepcopy(whole_grads[masks[0]:masks[1]])
+    print("grad_unwater mean:", grad_unwater.mean().item(),'grad_unwater std:', grad_unwater.std().item())
     sign_mask = torch.sign(grad_unwater) 
     num_spars = masks[1]-masks[0]
     # get the sign of the gradients, and sum the sign gradients
@@ -109,7 +110,8 @@ if __name__ == '__main__':
         # if args.agg_rule == 'AlignIns':
         #     global_model = ResNet9()
         # else:
-        global_model = ResNet18()
+        # global_model = ResNet18()
+        global_model = SmallVGG()
     elif args.dataset == 'fmnist':
         global_model = CNN().to(device)
     else:
@@ -194,18 +196,18 @@ if __name__ == '__main__':
             # get global gradient
             global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it)
             
-            
-            if hasattr(GAR, 'masks'):
-                masks = GAR.masks if hasattr(GAR, 'masks') else None
-                if masks is not None:
-                    print('---------------------------------------------------')
-                    # print(masks,masks[0],masks[1])
-                    watermarked_grad = embedding_watermark_on_position(masks=masks,whole_grads=global_grad,args=args)
-                    model_watermark = copy.deepcopy(model)
-                    vector_to_parameters(watermarked_grad, model_watermark.parameters())
-                    acc_w = test_classification(device, model_watermark, test_loader)
-                    print("Watermarked model Test Accuracy: {}%".format(acc_w))
-                    print()
+            if args.random_watermark:
+                if hasattr(GAR, 'masks'):
+                    masks = GAR.masks if hasattr(GAR, 'masks') else None
+                    if masks is not None:
+                        print('---------------------------------------------------')
+                        # print(masks,masks[0],masks[1])
+                        watermarked_grad = embedding_watermark_on_position(masks=masks,whole_grads=global_grad,args=args)
+                        model_watermark = copy.deepcopy(model)
+                        vector_to_parameters(watermarked_grad, model_watermark.parameters())
+                        acc_w = test_classification(device, model_watermark, test_loader)
+                        print("Watermarked model Test Accuracy: {}%".format(acc_w))
+                        print()
 
             byz_rate.append(isbyz)
             benign_rate.append((len(selected_idx)-isbyz*num_byzs)/(num_users-num_byzs))
@@ -227,58 +229,63 @@ if __name__ == '__main__':
     alpha = args.alpha
     k = args.k
     d = args.delta
+    args.random_watermark = True
     print("Watermarking with alpha: {}, delta: {}, k: {}".format(alpha, d, k))
     for epoch in range(args.epochs):
         loss = train_parallel(args, global_model, train_loader, optimizer, epoch, scheduler)
         acc = test_classification(device, global_model, test_loader)
         print("Test Accuracy: {}%".format(acc))
-        #-------------------------------------------------------------
-        # test watermark etc.
-        Watermark = QIM(delta=d)
-        flatten_global_grad = tools.get_parameter_values(global_model)
-        #########################################################
-        # print(flatten_global_grad.mean(), flatten_global_grad.std(), flatten_global_grad.min(), flatten_global_grad.max())
-        # testnp.random.randn(*a.shape)
-        # print("Param mean:", flatten_global_grad.mean().item())
-        # print("Std:", flatten_global_grad.std().item())
-        # grad_test = copy.deepcopy(flatten_global_grad) + torch.randn_like(flatten_global_grad) * 0.1
-        # print('distortion:',torch.mean(torch.abs(flatten_global_grad - grad_test)))
-        # model_copy = copy.deepcopy(global_model)
-        # vector_to_parameters(torch.tensor(grad_test,dtype=torch.float32).to(device), model_copy.parameters())
-        # acc_test = test_classification(device, model_copy, test_loader)
-        # print("Test Accuracy with noise: {}%".format(acc_test))
-        #########################################################
-        # random message
-        # message = Watermark.random_msg(len(flatten_global_grad))
-        # # embedding watermark to whole global gradient
-        # # global_w = torch.tensor(Watermark.embed(flatten_global_grad, message, alpha=alpha,k=k),dtype=torch.float32).to(device)
-        
-        # t_ = flatten_global_grad.cpu().detach().numpy()
-        # # print(len(t_))
-        # w_ = Watermark.embed(t_,m=message,alpha=alpha,k=k)
-        # r_w,mm = Watermark.detect(w_,alpha=alpha,k=k)
-        # print("Test Reconstructed Gradient Error:", np.mean(np.abs(t_ - r_w)))
+
+        epoch_watermark_check = True
+
+        if epoch_watermark_check:
+            #-------------------------------------------------------------
+            # test watermark etc.
+            Watermark = QIM(delta=d)
+            flatten_global_grad = tools.get_parameter_values(global_model)
+            #########################################################
+            # print(flatten_global_grad.mean(), flatten_global_grad.std(), flatten_global_grad.min(), flatten_global_grad.max())
+            # testnp.random.randn(*a.shape)
+            print("Param mean:", flatten_global_grad.mean().item())
+            print("Std:", flatten_global_grad.std().item())
+            # grad_test = copy.deepcopy(flatten_global_grad) + torch.randn_like(flatten_global_grad) * 0.1
+            # print('distortion:',torch.mean(torch.abs(flatten_global_grad - grad_test)))
+            # model_copy = copy.deepcopy(global_model)
+            # vector_to_parameters(torch.tensor(grad_test,dtype=torch.float32).to(device), model_copy.parameters())
+            # acc_test = test_classification(device, model_copy, test_loader)
+            # print("Test Accuracy with noise: {}%".format(acc_test))
+            #########################################################
+            # random message
+            message = Watermark.random_msg(len(flatten_global_grad))
+            #embedding watermark to whole global gradient
+            # global_w = torch.tensor(Watermark.embed(flatten_global_grad, message, alpha=alpha,k=k),dtype=torch.float32).to(device)
+            
+            t_ =  copy.deepcopy(flatten_global_grad.cpu().detach().numpy())
+            # print(len(t_))
+            w_ = Watermark.embed(t_,m=message,alpha=alpha,k=k)
+            r_w,mm = Watermark.detect(w_,alpha=alpha,k=k)
+            print("Test Reconstructed Gradient Error:", np.mean(np.abs(t_ - r_w)))
 
 
-        # global_w = torch.tensor(w_,dtype=torch.float32).to(device)
-        # m = mm
-        # reconstructed_grad = torch.tensor(r_w,dtype=torch.float32).to(device)
+            global_w = torch.tensor(w_,dtype=torch.float32).to(device)
+            m = mm
+            reconstructed_grad = torch.tensor(r_w,dtype=torch.float32).to(device)
 
-        # model_watermark = copy.deepcopy(global_model)
-        # vector_to_parameters(global_w, model_watermark.parameters())
-        # acc_w = test_classification(device, model_watermark, test_loader)
-        # # detect and recover watermark
-        # # global_w = global_w.cpu().detach().numpy()
-        # # reconstructed_grad, m = Watermark.detect(global_w, alpha=alpha,k=k)
-        # print('Distortion wat v.s. ori:',torch.mean(torch.abs(flatten_global_grad - global_w)))
-        # print("Watermark acc:", np.mean(message == m))
-        # print("Watermarked model Test Accuracy: {}%".format(acc_w))
-        # print("Reconstructed Gradient Error (should be same as Test Reconstructed Gradient Error):", torch.mean(torch.abs(flatten_global_grad - reconstructed_grad)))
-        # # reconstructed_grad = torch.tensor(reconstructed_grad, dtype=torch.float32).to(device)
-        # model_recover = copy.deepcopy(global_model)
-        # vector_to_parameters(reconstructed_grad, model_recover.parameters())
-        # acc_recovered = test_classification(device, model_recover, test_loader)
-        # print("Recovered model Test Accuracy: {}%".format(acc_recovered))
+            model_watermark = copy.deepcopy(global_model)
+            vector_to_parameters(global_w, model_watermark.parameters())
+            acc_w = test_classification(device, model_watermark, test_loader)
+            # detect and recover watermark
+            # global_w = global_w.cpu().detach().numpy()
+            # reconstructed_grad, m = Watermark.detect(global_w, alpha=alpha,k=k)
+            print('Distortion wat v.s. ori:',torch.mean(torch.abs(flatten_global_grad - global_w)))
+            print("Watermark acc:", np.mean(message == m))
+            print("Watermarked model Test Accuracy: {}%".format(acc_w))
+            print("Reconstructed Gradient Error (should be same as Test Reconstructed Gradient Error):", torch.mean(torch.abs(flatten_global_grad - reconstructed_grad)))
+            # reconstructed_grad = torch.tensor(reconstructed_grad, dtype=torch.float32).to(device)
+            model_recover = copy.deepcopy(global_model)
+            vector_to_parameters(reconstructed_grad, model_recover.parameters())
+            acc_recovered = test_classification(device, model_recover, test_loader)
+            print("Recovered model Test Accuracy: {}%".format(acc_recovered))
         if epoch%100 == 0:
             os.makedirs(f"./outputs/Rqim_model/", exist_ok=True)
             torch.save(global_model.state_dict(), f'./outputs/Rqim_model/model_{epoch}.pth')

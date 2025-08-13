@@ -108,7 +108,7 @@ class signguard_multiclass(object):
         
         global_grad = grads_clip[benign_idx].mean(dim=0)
         self.masks = masks
-        print('masks:', self.masks)
+        # print('masks:', self.masks)
         return global_grad, benign_idx, byz_num/f # this is the attack success rate
 
 
