@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 from sklearn.mixture import GaussianMixture
 import os
-from .Mean import mean
+from .Mean import mean as MeanAggregator
 class FLGMM():
     def __init__(self):
         self.name = "FLGMM"
@@ -14,21 +14,25 @@ class FLGMM():
         self.o = 0
         self.distances_matrix = []
 
-    def aggregate(self,gradients,f=10,iteration=1,ccepochs=50):
+    def aggregate(self,gradients,f=10,epoch=1,g0=None,iteration=1,ccepochs=50,use_g0=False,**kwargs):
         num_users = len(gradients)
         save_dir = 'outputs/FLGMM/'
         if len(self.distances_matrix) != num_users:
             self.distances_matrix = [[] for _ in range(num_users)]
         distances_matrix_this_round = []
         normal_id = []
+        excluded_clients = []
         # normal_clients_dis = []
         # normal_clients_dis_mean = []
         # normal_std = []
         normal_dis = [[] for _ in range(num_users)]
-        FedAvg_0 = mean().aggregate
-        w_glob = FedAvg_0(gradients)
+        FedAvg_0 = MeanAggregator().aggregate
+        if use_g0:
+            w_glob = g0
+        else:
+            w_glob,_,_ = FedAvg_0(gradients)
         excluded = []
-        noisy_this_round = []
+        # noisy_this_round = []
         noisy_clients = [i for i in range(f)]
         # Calculate the euclidean distance between local and centroid weights
         for idx, w_local in enumerate(gradients):
@@ -40,18 +44,20 @@ class FLGMM():
 
         # Utilize GMM to find the largest cluster, return all the weights follows largest cluster
         largest_cluster_data, bounds, means, covariances, weights = decompose_normal_distributions(distances_array)
-        print(len(largest_cluster_data))
+        # print(len(largest_cluster_data))
         mean = np.mean(largest_cluster_data)
         std = np.std(largest_cluster_data)
+        # print("Mean of largest cluster:", mean)
+        # print("Std of largest cluster:", std)
         # use mean and std to normalize the largest cluster, and store them into distanc_matrix for SPC
         for idx in range(num_users):
             self.distances_matrix[idx].append((distances[idx]-mean)/std)
             # if during the initial rounds, directly use GMM results to select normal clients
-            if distances_matrix_this_round[idx] in largest_cluster_data and iteration < ccepochs:
+            if distances_matrix_this_round[idx] in largest_cluster_data and epoch < ccepochs:
                 normal_id.append(idx)
 
         # Plot GMM in round 10
-        if iteration == 10:
+        if epoch == 10:
             flat_distances3 = distances_matrix_this_round
             plt.figure(figsize=(10, 6))
             plt.hist(flat_distances3, bins=50, color='grey', edgecolor='black', density=True, alpha=0.6)
@@ -84,7 +90,7 @@ class FLGMM():
             plt.savefig(os.path.join(save_dir, f'Final_distance_distribution_10round.png'))
             plt.close()
         # when the initial rounds is over, use GMM results as reference
-        if iteration == ccepochs:
+        if epoch == ccepochs:
             # normalid = []
             # f_distances_matrix = [[] for _ in range(num_users)]
             # for each distance in initial rounds (normalized)
@@ -143,13 +149,17 @@ class FLGMM():
             self.p.append(calculate_accuracy(excluded_clients, noisy_clients)[1])
             recall = calculate_accuracy(excluded_clients, noisy_clients)[0]
             pre = calculate_accuracy(excluded_clients, noisy_clients)[1]
-            f = 2 * recall * pre / (recall + pre)
-            self.f1.append(f)
             print("Initial recall:", self.r[0])
             print("Initial precision:", self.p[0])
+            if recall + pre == 0:
+                ff = 0.0
+            else:
+                ff = 2 * recall * pre / (recall + pre)
+            self.f1.append(ff)
+            
             print("Initial f1score:", self.f1[0])
 
-        if iteration > ccepochs:
+        if epoch > ccepochs:
             # use UCL to determine the normal clients
             for idx, client_distances in enumerate(self.distances_matrix):
                 if client_distances[-1] < UCL:
@@ -158,20 +168,21 @@ class FLGMM():
                     excluded.append(idx)
             excluded_clients = excluded
             print("Anomaly:", excluded)
-            self.r.append(calculate_accuracy(excluded_clients, noisy_this_round)[0])
-            self.p.append(calculate_accuracy(excluded_clients, noisy_this_round)[1])
+            self.r.append(calculate_accuracy(excluded_clients, noisy_clients)[0])
+            self.p.append(calculate_accuracy(excluded_clients, noisy_clients)[1])
             recall = calculate_accuracy(excluded_clients, noisy_clients)[0]
             pre = calculate_accuracy(excluded_clients, noisy_clients)[1]
-            f = 2 * recall * pre / (recall + pre)
-            self.f1.append(f)
-            print("Recall:", self.r[o])
-            print("Precision:", self.p[o])
-            print("f1score:", self.f1[o])
+            ff = 2 * recall * pre / (recall + pre)
+            self.f1.append(ff)
+            print("Recall:", self.r[self.o])
+            print("Precision:", self.p[self.o])
+            print("f1score:", self.f1[self.o])
             self.o += 1
 
         # Update global model
-        if iteration < ccepochs:
+        if epoch < ccepochs:
             gradients_used = [gradients[i] for i in range(len(gradients)) if i in normal_id]
+            excluded_clients = [i for i in range(len(gradients)) if i not in normal_id]
             # print('numbers of participants:',len(gradients_used))
 
         else:
@@ -179,29 +190,15 @@ class FLGMM():
             # print('numbers of participants:', len(gradients_used))
 
         if len(gradients_used) > 0:
-            w_glob = FedAvg_0(gradients_used)
-        #     net_glob.load_state_dict(w_glob)
-        #     global_acc, global_loss = test_img(net_glob, dataset_test, args)
-        #     global_acctotal.append(global_acc)
-        #     global_losses.append(global_loss)
-        #     print('Round {:3d}, global acc {:.3f}'.format(iteration, global_acc))
-        #     print('Round {:3d}, global loss {:.3f}'.format(iteration, global_loss))
-        # else:
-        #     print('Round {:3d}, No participant, skip'.format(iteration))
-        #     if len(global_acctotal) > 0:
-        #         global_acctotal.append(global_acctotal[-1])
-        #         global_losses.append(global_losses[-1])
-        #     else:
-        #         global_acc, global_loss = test_img(net_glob, dataset_test, args)
-        #         global_acctotal.append(global_acc)
-        #         global_losses.append(global_loss)
-        print(normal_id)
-        return w_glob,normal_id,excluded_clients/f
+            w_glob,_,_ = FedAvg_0(gradients_used)
+        byz_num = (np.array(normal_id)<f).sum()
+        return w_glob,normal_id,byz_num/f
     
 def euclidean_distance(local_weights, global_weights):
     distance = 0
-    for key in global_weights.keys():
-        distance += torch.pow(local_weights[key] - global_weights[key], 2).sum()
+    # for key in global_weights.keys():
+    #     distance += torch.pow(local_weights[key] - global_weights[key], 2).sum()
+    distance = torch.sum((local_weights - global_weights) ** 2)
     distance = torch.sqrt(distance)
     return distance.item()
 def calculate_accuracy(detected_noisy_clients, actual_noisy_clients):
