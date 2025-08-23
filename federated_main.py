@@ -99,6 +99,7 @@ def embedding_watermark_on_position(masks,whole_grads,args):
 if __name__ == '__main__':
     # TODO: set random seed, numpy
     np.random.seed(2021)
+    torch.manual_seed(2021)
     args = args_parser()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
@@ -110,8 +111,8 @@ if __name__ == '__main__':
         # if args.agg_rule == 'AlignIns':
         #     global_model = ResNet9()
         # else:
-        # global_model = ResNet18()
-        global_model = SmallVGG()
+        global_model = ResNet18()
+        # global_model = SmallVGG()
     elif args.dataset == 'fmnist':
         global_model = CNN().to(device)
     else:
@@ -194,7 +195,7 @@ if __name__ == '__main__':
             #     [model.state_dict()[name] for name in model.state_dict()]).detach()
             flatten_global_grad = tools.get_parameter_values(model)
             # get global gradient
-            global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it)
+            global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
             
             if args.random_watermark:
                 if hasattr(GAR, 'masks'):

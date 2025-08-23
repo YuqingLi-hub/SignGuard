@@ -3,14 +3,16 @@ import os
 from datetime import date
 date = date.today().strftime("%Y-%m-%d_m")
 import sys
-
+from collections import defaultdict
+from tools import *
 class QIM:
     def __init__(self, delta):
         # delta is the step size of quantization
         self.delta = delta
         # self.alpha = 0.51  # alpha is the weight of the original vector in the embedding
-
-    def embed(self, x, m,alpha=0.51,k=0,beta=1.):
+        self.fAlpha = 'logistic'  # alpha function type, can be 'linear', 'logistic', or 'cosine'
+        self.r = 3.9
+    def embed(self, x, m,alpha=0.51,k=0):
         """
         x is a vector of values to be quantized individually
         m is a binary vector of bits to be embeded
@@ -19,13 +21,18 @@ class QIM:
         # make x type float
         x = x.astype(float)
         # state alpha
-        scale = self.alpha_func(alpha=alpha,beta=beta)
-        print(scale)
+        scale = self.alpha_func(alpha=alpha,n=len(x))
+        # print(alpha)
+        # print(-np.exp(-(alpha-0.5)**2 / 10**2)*0.5+1)
+        print(sigmoid(alpha))
+        # print(np.where(scale<=0.5),np.where(scale>=1))
+        # print(scale[np.where(scale<=0.5)][:10])
+        # print(scale)
         d = self.delta
         # get d_0 and d_1 according to m
         # dm = (-1)**(m+1) * d/2.
         dm = m*d/2.
-        q_mk = quanti(beta*(x-dm-k), d) + (dm + k)*beta
+        q_mk = quanti((x-dm-k), d) + (dm + k)
         # dis = np.round((x-dm-k) / d) - (x-dm-k)/d
         # print('Theory Embedding distortion: $a*delta*(frac((s-d_m-k)/delta))', alpha*d*dis)
         self.q_mk = q_mk
@@ -33,9 +40,36 @@ class QIM:
         y = q_mk * scale + x * (1 - scale)
         return y
     
-    def alpha_func(self, alpha,beta=1):
+    def alpha_func(self, alpha,beta=2,n=1000):
+        r = self.r
+        eps = 1e-3
+        # x =1/(1+np.exp(-alpha))
+        x = -np.exp(-(alpha-0.5)**2 / 10**2)
+        # print(x)
+        # print(x)
+        count_out_range = 0
+        if self.fAlpha == 'logistic':
+            points = []
+            for _ in range(n):
+                if x<=0.5:
+                    x = 0.5+x
+                    count_out_range+=1
+                elif x>=1:
+                    x = 1-eps
+                    count_out_range+=1
+                points.append(x)
+                x = r * x * (1 - x)
+            # return np.clip(points, 0.5+eps, 1-eps)  # Ensure alpha is within [0, 1]
+            points = np.array(points)
+            # print(count_out_range)
+            print(np.where(points>=1), np.where(points<=0.5))
+            return np.array(points)
+        elif self.fAlpha == 'bump':
+            
+            return np.exp(-(alpha-0.5)**2 / 3**2)
+        
         return alpha/beta
-    def detect(self, z,alpha=1,k=0,scale_delta=1,beta=1.):
+    def detect(self, z,alpha=1,k=0,scale_delta=1):
         """
         z is the received vector, potentially modified
         returns: a detected vector z_detected and a detected message m_detected
@@ -43,17 +77,18 @@ class QIM:
         d = self.delta *scale_delta
         M_cls = 2.
         shape = z.shape
-        scale = self.alpha_func(alpha=alpha,beta=beta)
+        scale = self.alpha_func(alpha=alpha,n=len(z))
+        # print(scale)
         z = z.flatten()
         z = z.astype(float)
         m_detected = np.zeros_like(z, dtype=float)
-        dm_hat = (quanti(beta*(z-k),d/M_cls)+k*beta)
+        dm_hat = (quanti((z-k),d/M_cls)+k)
         self.dm_hat = dm_hat
         self.m_c = self.selective_round(dm_hat/d)%1
         self.y_dm_hat = abs(z-self.q_mk)
         z_hat = (z-scale * dm_hat)/ (1-scale)
         d_values = [0,d/2.]
-        rough_m = np.round((self.selective_round((dm_hat-k*beta)/d)%1)*2)
+        rough_m = np.round((self.selective_round((dm_hat-k)/d)%1)*2)
         m_detected = rough_m
         m_detected = m_detected.reshape(shape)
         return z_hat, m_detected.astype(int)
@@ -151,8 +186,10 @@ def quanti(x, delta):
     # the delta*floor[x/delta]
     # so floor will increase the distortion
     return np.round(x / delta) * delta
-
-
+def bump(alpha):
+    return -np.exp(-(alpha-0.5)**2 / 10**2)
+def sigmoid(alpha):
+    return 1/(1+np.exp(-alpha))
 
 
 
@@ -185,12 +222,12 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     
     
     true_k = k
-    true_f = 10
-    # alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=0.7, delta_alpha=0.005, N=33, use_cos=True,f=true_f)
-    alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=0.7, delta_alpha=0.005, N=33, use_cos=False)
-    print('Alpha Pattern unique:', np.unique(alpha_pattern), len(np.unique(alpha_pattern)))
-    y_watermarked = qim.embed_alpha_pattern(x, msg, alpha_pattern, k=0.0)
-    good_z, good_msg = qim.detect(y_watermarked, alpha=alpha_pattern, k=0, scale_delta=1)
+    true_f = 3
+    # alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=embedding_alpha, delta_alpha=0.005, N=33, use_cos=True,f=true_f)
+    # alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=0.7, delta_alpha=0.005, N=33, use_cos=False)
+    # print('Alpha Pattern unique:', np.unique(alpha_pattern), len(np.unique(alpha_pattern)))
+    # y_watermarked = qim.embed_alpha_pattern(x, msg, alpha_pattern, k=0.0)
+    # good_z, good_msg = qim.detect(y_watermarked, alpha=alpha_pattern, k=0, scale_delta=1)
     # bad_alpha = qim.make_alpha_pattern(len(x), alpha_c=0.7, delta_alpha=0.005, N=33, use_cos=True,f=1000)
     # bad_z, bad_msg = qim.detect(y_watermarked, alpha=bad_alpha, k=0, scale_delta=1)
     # print('Alpha Pattern unique:', np.unique(bad_alpha), len(np.unique(bad_alpha)))
@@ -198,7 +235,7 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     # print(f'Recovery error when wrong: {np.mean(np.abs(bad_z - x)):.6f}')
 
     # Sweep detector α0
-    alpha0s = np.linspace(0.5, 0.9, 81)
+    # alpha0s = np.linspace(0.5, 0.9, 81)
 
     # scores = qim.sweep_alpha0(y_watermarked, alpha0s, k=0.0, carrier='exp', f=1.0)
     # print(np.argmin(scores), np.min(scores),alpha0s[np.argmin(scores)])
@@ -224,33 +261,33 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
 
 
 
-    print('Watermarked y (first 5):', y_watermarked[:5])
-    print('Distortion: ',y_watermarked[:5]-x[:5])
-    initial_distortion = np.mean(np.abs(x - y_watermarked))
-    print(f"Initial Embedding Distortion (Abs Diff): {initial_distortion:.6f}")
-    print(f"Detected Message Accuracy: {np.mean(msg == good_msg):.4f}")
-    print(f'Recovery error when all correct: {np.mean(np.abs(good_z - x)):.6f}')
+    # print('Watermarked y (first 5):', y_watermarked[:5])
+    # print('Distortion: ',y_watermarked[:5]-x[:5])
+    # initial_distortion = np.mean(np.abs(x - y_watermarked))
+    # print(f"Initial Embedding Distortion (Abs Diff): {initial_distortion:.6f}")
+    # print(f"Detected Message Accuracy: {np.mean(msg == good_msg):.4f}")
+    # print(f'Recovery error when all correct: {np.mean(np.abs(good_z - x)):.6f}')
 
 
     #######################################
     # # --- Step 1: Embed the watermark ONCE with a specific, fixed alpha ---
-    # # embedding_alpha = embedding_alpha # This is the "true" alpha used for embedding
-    # print(f"\n--- Embedding watermark with fixed alpha = {embedding_alpha}, delta = {delta}, k = {true_k} ---")
-    # print(f"")
-    # y_watermarked = qim.embed(x, msg, alpha=embedding_alpha, k=true_k)
-    # print('Watermarked y (first 5):', y_watermarked[:5])
-    # print('Distortion: ',y_watermarked[:5]-x[:5])
-    # initial_distortion = np.mean(np.abs(x - y_watermarked))
-    # good_z, good_msg = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=1)
-    # print(f"Initial Embedding Distortion (Abs Diff): {initial_distortion:.6f}")
-    # print(f"Detected Message Accuracy: {np.mean(msg == good_msg):.4f}")
-    # # print(qim.m_c[msg != good_msg])
-    # # # print((1-qim.m_c)[msg != good_msg])
-    # # # # print(qim.dm_hat[msg != good_msg]%1)
-    # # # print()
-    # # print(msg[msg != good_msg])
-    # # print(good_msg[msg != good_msg])
-    # print(f'Recovery error when all correct: {np.mean(np.abs(good_z - x)):.6f}')
+    # embedding_alpha = embedding_alpha # This is the "true" alpha used for embedding
+    print(f"\n--- Embedding watermark with fixed alpha = {embedding_alpha}, delta = {delta}, k = {true_k} ---")
+    print(f"")
+    y_watermarked = qim.embed(x, msg, alpha=embedding_alpha, k=true_k)
+    print('Watermarked y (first 5):', y_watermarked[:5])
+    print('Distortion: ',y_watermarked[:5]-x[:5])
+    initial_distortion = np.mean(np.abs(x - y_watermarked))
+    good_z, good_msg = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=1)
+    print(f"Initial Embedding Distortion (Abs Diff): {initial_distortion:.6f}")
+    print(f"Detected Message Accuracy: {np.mean(msg == good_msg):.4f}")
+    # print(qim.m_c[msg != good_msg])
+    # # print((1-qim.m_c)[msg != good_msg])
+    # # # print(qim.dm_hat[msg != good_msg]%1)
+    # # print()
+    # print(msg[msg != good_msg])
+    # print(good_msg[msg != good_msg])
+    print(f'Recovery error when all correct: {np.mean(np.abs(good_z - x)):.6f}')
 
 
     # --- Step 2: Loop through different 'a' values for DETECTION/RESTORATION ---
@@ -261,46 +298,62 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
         recovery_errors = [] # This will store np.mean(np.abs(z_detected - x))
         message_accuracies = [] # This will store sum(msg==msg_detected)/len(msg)
 
-        # print("\n--- Testing Detection/Restoration with Varying Alphas ---")
+        # # print("\n--- Testing Detection/Restoration with Varying Alphas ---")
         # alphas_to_test_detection =np.linspace(true_f-1, true_f+1, 200)
-        alphas_to_test_detection =  np.linspace(-2, 2,200)
+        # # guessed_alpha_c = [0.51,0.6,0.7,0.8,0.9,0.99]
+        # guessed_alpha_c = np.linspace(-3,3, 100) # Guessed alpha_c values
+        alphas_to_test_detection =  np.linspace(-7.5, 7.5,200)
+        scale_alpha = np.linspace(-20, 20,2000)
+        # plot_any(scale_alpha, qim.alpha_func(scale_alpha), 
+        #          title='Alpha Function', xlabel='Alpha', ylabel='f(Alpha)', 
+        #          filename=f'alpha_function = beta*alpha*(1-alpha)+0.5')
+        # guess_alpha_f = defaultdict(list) # Store recovery errors for each guessed alpha_c
         for a_detect in alphas_to_test_detection:
-            # alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=embedding_alpha, delta_alpha=0.005, N=33, use_cos=True,f=a_detect)
-            # print(np.unique(alpha_pattern))
-            alpha_pattern = a_detect
-            z_detected, msg_detected = qim.detect(y_watermarked, alpha=alpha_pattern, k=true_k)
-        # secret_k_sequence = np.linspace(-5, 5, 1000)
-        # for k in secret_k_sequence:
-        #     z_detected, msg_detected = qim.detect(y_watermarked, alpha=embedding_alpha, k=k)
-        # scale_delta = np.concatenate((np.linspace(0.1, 5, 100),np.array([1,2,3,4,5])),axis=0)
-        # scale_delta = np.concatenate((np.linspace(0.1, 5, 100),np.linspace(0.9, 1.1, 100)),axis=0)
-        # scale_delta = np.linspace(0.1, 5, 100)
-        # middle = 1
-        # range_scale = 0.2
-        # scale_delta = (np.linspace(middle-range_scale, middle+range_scale, 200))
-        # theory = []
-        # dm_hat = []
-        # for sd in scale_delta:
-        #     z_detected, msg_detected = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=sd)
-        #     theory.append(np.mean(np.abs(qim.q_mk - qim.dm_hat)*embedding_alpha/(1-embedding_alpha)))
-        #     dm_hat.append(np.mean(np.abs(qim.dm_hat)))
-            # print(f"Attempting to detect/restore with detection alpha = {a_detect:.2f}")
-            # if np.isclose(a_detect, 1, atol=0.005):
-            #     recovery_errors.append(np.inf)
-            #     continue  # Skip detection at alpha=1 to avoid division by zero in theory error
-            # Use the SAME y_watermarked from the single embedding above
+        #     for g in guessed_alpha_c:
+            z_detected, msg_detected = qim.detect(y_watermarked, alpha=a_detect, k=true_k)
+            
+        #         alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=g, delta_alpha=0.005, N=33, use_cos=True,f=a_detect)
+        #         z_detected, msg_detected = qim.detect(y_watermarked, alpha=alpha_pattern, k=true_k)
+        #         current_recovery_error = np.mean(np.abs(z_detected - x))
+        #         guess_alpha_f[a_detect].append(current_recovery_error)
+        #     # print(f"Testing with guessed alpha_c: {g}")
+        #     # print(f"Attempting to detect/restore with detection alpha = {a_detect:.2f}")
+        #     alpha_pattern = qim.make_alpha_pattern(len(x), alpha_c=guessed_alpha_c, delta_alpha=0.005, N=33, use_cos=True,f=a_detect)
+        #     # print(np.unique(alpha_pattern))
+        #     # alpha_pattern = a_detect
+        #     z_detected, msg_detected = qim.detect(y_watermarked, alpha=alpha_pattern, k=true_k)
+        # # secret_k_sequence = np.linspace(-5, 5, 1000)
+        # # for k in secret_k_sequence:
+        # #     z_detected, msg_detected = qim.detect(y_watermarked, alpha=embedding_alpha, k=k)
+        # # scale_delta = np.concatenate((np.linspace(0.1, 5, 100),np.array([1,2,3,4,5])),axis=0)
+        # # scale_delta = np.concatenate((np.linspace(0.1, 5, 100),np.linspace(0.9, 1.1, 100)),axis=0)
+        # # scale_delta = np.linspace(0.1, 5, 100)
+        # # middle = 1
+        # # range_scale = 0.2
+        # # scale_delta = (np.linspace(middle-range_scale, middle+range_scale, 200))
+        # # theory = []
+        # # dm_hat = []
+        # # for sd in scale_delta:
+        # #     z_detected, msg_detected = qim.detect(y_watermarked, alpha=embedding_alpha, k=true_k, scale_delta=sd)
+        # #     theory.append(np.mean(np.abs(qim.q_mk - qim.dm_hat)*embedding_alpha/(1-embedding_alpha)))
+        # #     dm_hat.append(np.mean(np.abs(qim.dm_hat)))
+        #     # print(f"Attempting to detect/restore with detection alpha = {a_detect:.2f}")
+        #     # if np.isclose(a_detect, 1, atol=0.005):
+        #     #     recovery_errors.append(np.inf)
+        #     #     continue  # Skip detection at alpha=1 to avoid division by zero in theory error
+        #     # Use the SAME y_watermarked from the single embedding above
             
             
-            # Calculate errors
+        #     # Calculate errors
 
             current_recovery_error = np.mean(np.abs(z_detected - x))
-            # thery = np.mean(np.abs(qim.y_dm_hat*((a_detect-embedding_alpha)/((1-embedding_alpha)*(1-a_detect)))))
+        #     # thery = np.mean(np.abs(qim.y_dm_hat*((a_detect-embedding_alpha)/((1-embedding_alpha)*(1-a_detect)))))
 
-            # print(f"  Detected error (first 5): {current_recovery_error}")
-            # print(f"  Theory error (first 5): {thery}")
-            # print(np.isclose(current_recovery_error, thery, atol=1e-7, rtol=1e-7))
+        #     # print(f"  Detected error (first 5): {current_recovery_error}")
+        #     # print(f"  Theory error (first 5): {thery}")
+        #     # print(np.isclose(current_recovery_error, thery, atol=1e-7, rtol=1e-7))
             current_message_accuracy = np.mean(msg == msg_detected) # Already normalized
-            # print(f"  Detected message accuracy: {current_message_accuracy:.4f}")
+        #     # print(f"  Detected message accuracy: {current_message_accuracy:.4f}")
             recovery_errors.append(current_recovery_error)
             message_accuracies.append(current_message_accuracy)
             
@@ -314,41 +367,52 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
             #         f"Host not perfectly restored at a_detect={a_detect}!"
                 # assert np.all(msg == msg_detected), \
                 #     f"Watermark not perfectly detected at a_detect={a_detect}!"
-        print(alphas_to_test_detection[np.argmin(recovery_errors)],np.min(recovery_errors),embedding_alpha)
+        # print('True f:', true_f, 'with guessed alpha:',guessed_alpha_c)
+        # print('Guessed f:', alphas_to_test_detection[np.argmin(recovery_errors)],np.min(recovery_errors),np.mean(recovery_errors),embedding_alpha)
     if plot:
         # --- Plotting Results ---
         from matplotlib import pyplot as plt
         # print(abs((alphas_to_test_detection-embedding_alpha)/(embedding_alpha*(1-alphas_to_test_detection)))[:10])
         scaled_alpha = qim.alpha_func(embedding_alpha)
         # y = np.abs((alphas_to_test_detection - scaled_alpha) / ((1 - scaled_alpha) * (1 - alphas_to_test_detection)))
-        
+        # for a_detect in alphas_to_test_detection:
+            
+        plot_rec_mess(recovery_errors, message_accuracies, sigmoid(alphas_to_test_detection), sigmoid(embedding_alpha), delta)
         # Plot Recovery Error
-        plt.figure(figsize=(12, 6))
-        plt.plot(alphas_to_test_detection, recovery_errors, marker='o', linestyle='-', markersize=4)
-        # plt.plot(alphas_to_test_detection, y, label=r"$\left|\frac{x - 0.7}{0.3(1 - x)}\right|$")
-        # plt.plot(alphas_to_test_detection, abs(((alphas_to_test_detection-embedding_alpha)/((1-embedding_alpha)*(1-alphas_to_test_detection)))), markersize=4,label='Theoretical Error')
-        plt.axvline(x=np.sinc(embedding_alpha), color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
-        plt.title(f'Recovery Error vs. Detection Alpha (Delta={delta}, True Embed Alpha={embedding_alpha})')
-        plt.xlabel('Detection Alpha ($a$)')
-        plt.ylabel('Mean Absolute Recovery Error ($|\\hat{s} - s|$ mean)')
-        plt.ylim(0, 10)  # Optional: limit y for better visualization
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        os.makedirs(f"./outputs/qim/{date}/", exist_ok=True)
-        plt.savefig(f"./outputs/qim/{date}/recovery_error_alpha_{embedding_alpha}_delta_{delta}.png")
-        plt.close()
-        plt.figure(figsize=(12, 6))
-        plt.plot(alphas_to_test_detection, message_accuracies, marker='o', linestyle='-', markersize=4, color='green')
-        plt.axvline(x=embedding_alpha, color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
-        plt.title(f'Message Detection Accuracy vs. Detection Alpha (Delta={delta}, True Embed Alpha={embedding_alpha})')
-        plt.xlabel('Detection Alpha ($a$)')
-        plt.ylabel('Message Accuracy')
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(f"./outputs/qim/{date}/message_accuracy_alpha_{embedding_alpha}.png")
-        plt.close()
+        # plt.figure(figsize=(12, 6))
+        # for g in alphas_to_test_detection:
+        #     # if g % 0.01 <0.001 or g%true_f <0.1:  # Plot only every 0.01 or if close to embedding_alpha
+        #         recovery_errors = guess_alpha_f[g]              #{alphas_to_test_detection[np.argmin(recovery_errors)]:.2f},{g:.2f}
+        #         # print(recovery_errors[:10])
+        #         plt.plot(guessed_alpha_c, recovery_errors, marker='o', linestyle='-', markersize=4,label=f'Guess f, alpha ={guessed_alpha_c[np.argmin(recovery_errors)]:.2f},{g:.2f},min_e={np.min(recovery_errors):.2f}')
+        #     # plt.plot(alphas_to_test_detection, y, label=r"$\left|\frac{x - 0.7}{0.3(1 - x)}\right|$")
+        #     # plt.plot(alphas_to_test_detection, abs(((alphas_to_test_detection-embedding_alpha)/((1-embedding_alpha)*(1-alphas_to_test_detection)))), markersize=4,label='Theoretical Error')
+        #     # plt.axvline(x=np.sinc(embedding_alpha), color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
+        #     # plt.axhline(y=np.min(recovery_errors),color='r',linestyle='--', label=f'Min Recovery Error for {g}: {np.min(recovery_errors):.2f}')
+        # # plt.title(f'Recovery Error vs. Detection Alpha (Delta={delta}, True Embed Alpha={embedding_alpha})')
+        # plt.title(f'Recovery Error vs. Detection Alpha (Delta={delta}, True f={true_f}),alpha={embedding_alpha}')
+        # plt.xlabel('Detection Alpha ($a$)')
+        # # plt.xlabel('Guessed f ($f$)')
+        # plt.ylabel('Mean Absolute Recovery Error ($|\\hat{s} - s|$ mean)')
+        # plt.ylim(0, 1)  # Optional: limit y for better visualization
+        # plt.grid(True)
+        # plt.legend()
+        # plt.tight_layout()
+        # os.makedirs(f"./outputs/qim/{date}/", exist_ok=True)
+        # # plt.savefig(f"./outputs/qim/{date}/recovery_error_alpha_{embedding_alpha}_delta_{delta}.png")
+        # plt.savefig(f"./outputs/qim/{date}/recovery_error_alpha_{embedding_alpha}_delta_{delta}_guess_alpha_{guessed_alpha_c[0]}-{guessed_alpha_c[-1]}_f_{true_f}regardingf.png")
+        # plt.close()
+        # plt.figure(figsize=(12, 6))
+        # plt.plot(alphas_to_test_detection, message_accuracies, marker='o', linestyle='-', markersize=4, color='green')
+        # plt.axvline(x=embedding_alpha, color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
+        # plt.title(f'Message Detection Accuracy vs. Detection Alpha (Delta={delta}, True Embed Alpha={embedding_alpha}),True f={true_f}')
+        # plt.xlabel('Detection Alpha ($a$)')
+        # plt.ylabel('Message Accuracy')
+        # plt.grid(True)
+        # plt.legend()
+        # plt.tight_layout()
+        # plt.savefig(f"./outputs/qim/{date}/message_accuracy_alpha_{embedding_alpha}.png")
+        # plt.close()
     #     #################################################
     #     from matplotlib import pyplot as plt
     #     # print(abs((alphas_to_test_detection-embedding_alpha)/(embedding_alpha*(1-alphas_to_test_detection)))[:10])
@@ -424,6 +488,56 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
 
     #     print("\n--- Testing complete. Check generated plots in ./outputs/qim/ ---")
 
+def plot_any(x,y, title, xlabel, ylabel, filename):
+    """
+    Generic plotting function for any x, y data.
+    """
+    from matplotlib import pyplot as plt
+    plt.figure(figsize=(12, 6))
+    plt.plot(x, y, marker='o', linestyle='-', markersize=4)
+    plt.axhline(y=0.5, color='r', linestyle='--', label='y=0.5 Reference Line')
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    # plt.ylim(0, 1)  # Optional: limit y for better visualization
+    plt.grid(True)
+    plt.tight_layout()
+    os.makedirs(f"./outputs/qim/{date}/", exist_ok=True)
+    plt.savefig(f"./outputs/qim/{date}/{filename}.png")
+    plt.close()
+    
+def plot_rec_mess(recovery_errors, message_accuracies, alphas_to_test_detection, embedding_alpha, delta):
+    """
+    Plot recovery errors and message accuracies.
+    """
+    from matplotlib import pyplot as plt
+    # Plot Recovery Error
+    plt.figure(figsize=(12, 6))
+    plt.plot(alphas_to_test_detection, recovery_errors, linestyle='-', markersize=4)
+    plt.axvline(x=embedding_alpha, color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
+    plt.title(f'Recovery Error vs. Detection Alpha Delta={delta} ,alpha={embedding_alpha}')
+    plt.xlabel('Detection Alpha ($a$)')
+    plt.ylabel('Mean Absolute Recovery Error ($|\\hat{s} - s|$ mean)')
+    # plt.ylim(0, 1)  # Optional: limit y for better visualization
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    os.makedirs(f"./outputs/qim/{date}/", exist_ok=True)
+    plt.savefig(f"./outputs/qim/{date}/recovery_error_alpha_{embedding_alpha}_delta_{delta}_guess_alpha_{alphas_to_test_detection[0]}-{alphas_to_test_detection[-1]}r=3.9.png")
+    plt.close()
+
+    # Plot Message Accuracy
+    plt.figure(figsize=(12, 6))
+    plt.plot(alphas_to_test_detection, message_accuracies, marker='o', linestyle='-', markersize=4, color='green')
+    plt.axvline(x=embedding_alpha, color='r', linestyle='--', label=f'True Embedding Alpha ({embedding_alpha})')
+    plt.title(f'Message Detection Accuracy vs. Detection Alpha (Delta={delta}, True Embed Alpha={embedding_alpha})')
+    plt.xlabel('Detection Alpha ($a$)')
+    plt.ylabel('Message Accuracy')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f"./outputs/qim/{date}/message_accuracy_alpha_{embedding_alpha}.png")
+    plt.close()
 if __name__ == "__main__":
     # import numpy as np
     # import matplotlib.pyplot as plt

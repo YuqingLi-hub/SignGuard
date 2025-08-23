@@ -13,10 +13,11 @@ class FLGMM():
         self.f1 = []
         self.o = 0
         self.distances_matrix = []
+        self.UCL = None
 
-    def aggregate(self,gradients,f=10,epoch=1,g0=None,iteration=1,ccepochs=50,use_g0=False,**kwargs):
+    def aggregate(self,gradients,f=10,epoch=1,g0=None,iteration=1,ccepochs=50,use_g0=False,attack=None,**kwargs):
         num_users = len(gradients)
-        save_dir = 'outputs/FLGMM/'
+        save_dir = 'outputs/FLGMM/plots'
         if len(self.distances_matrix) != num_users:
             self.distances_matrix = [[] for _ in range(num_users)]
         distances_matrix_this_round = []
@@ -74,7 +75,7 @@ class FLGMM():
             plt.xlabel('Distance')
             plt.ylabel('Density')
             plt.legend()
-            plt.savefig(os.path.join(save_dir, 'GMM_distance_distribution_with_GMM_10rounds.png'))
+            plt.savefig(os.path.join(save_dir, f'{attack}_GMM_distance_distribution_with_GMM_10rounds.png'))
             upper_bound = bounds[1]
             lower_bound = bounds[0]
             # use upper bounds to filter out the clients in the largest cluster
@@ -87,7 +88,7 @@ class FLGMM():
             plt.title(f'Final Distance Distribution ')
             plt.xlabel('Distance')
             plt.ylabel('Density')
-            plt.savefig(os.path.join(save_dir, f'Final_distance_distribution_10round.png'))
+            plt.savefig(os.path.join(save_dir, f'{attack}_Final_distance_distribution_10round.png'))
             plt.close()
         # when the initial rounds is over, use GMM results as reference
         if epoch == ccepochs:
@@ -120,7 +121,7 @@ class FLGMM():
             plt.xlabel('Distance')
             plt.ylabel('Density')
             plt.legend()
-            plt.savefig(os.path.join(save_dir, 'GMM_distance_distribution_with_GMM.png'))
+            plt.savefig(os.path.join(save_dir,f'{attack}_GMM_distance_distribution_with_GMM.png'))
 
             flat_distances1 = [distance for client_list in normal_dis for distance in client_list]
             plt.figure(figsize=(10, 6))
@@ -129,7 +130,7 @@ class FLGMM():
             plt.title(f'Final Distance Distribution ')
             plt.xlabel('Distance')
             plt.ylabel('Density')
-            plt.savefig(os.path.join(save_dir, f'Final_distance_distribution_round.png'))
+            plt.savefig(os.path.join(save_dir, f'{attack}_Final_distance_distribution_round.png'))
             plt.close()
 
             # Erase clients in the component with a lager mean, by using GMM again on largest cluster
@@ -142,7 +143,9 @@ class FLGMM():
             # find the average distance of each client
             client_means = [np.mean(distances) for distances in self.distances_matrix]
             # determine the upper control limit (UCL) of the entire distance
-            excluded_clients, UCL, LCL = plot_control_chart(np.arange(len(client_means)), client_means, normal_dis, save_dir)
+            excluded_clients, UCL, LCL = plot_control_chart(np.arange(len(client_means)), client_means, normal_dis, save_dir,attack=attack)
+            self.UCL = UCL
+            print('Upper Control Limit:', UCL)
             print("GMM detects:", excluded_clients)
             
             self.r.append(calculate_accuracy(excluded_clients, noisy_clients)[0])
@@ -161,19 +164,29 @@ class FLGMM():
 
         if epoch > ccepochs:
             # use UCL to determine the normal clients
+            print('UCL:', self.UCL)
             for idx, client_distances in enumerate(self.distances_matrix):
-                if client_distances[-1] < UCL:
-                    normal_id.append(idx)
+                if self.UCL is not None:
+                    if client_distances[-1] < self.UCL:
+                        normal_id.append(idx)
+                    else:
+                        excluded.append(idx)
                 else:
-                    excluded.append(idx)
+                    break
             excluded_clients = excluded
             print("Anomaly:", excluded)
+            print("Normal clients:", normal_id)
             self.r.append(calculate_accuracy(excluded_clients, noisy_clients)[0])
             self.p.append(calculate_accuracy(excluded_clients, noisy_clients)[1])
             recall = calculate_accuracy(excluded_clients, noisy_clients)[0]
             pre = calculate_accuracy(excluded_clients, noisy_clients)[1]
-            ff = 2 * recall * pre / (recall + pre)
+            if recall + pre == 0:
+                ff = 0.0
+            else:
+                ff = 2 * recall * pre / (recall + pre)
             self.f1.append(ff)
+            # ff = 2 * recall * pre / (recall + pre)
+            # self.f1.append(ff)
             print("Recall:", self.r[self.o])
             print("Precision:", self.p[self.o])
             print("f1score:", self.f1[self.o])
@@ -187,6 +200,7 @@ class FLGMM():
 
         else:
             gradients_used = [gradients[i] for i in range(len(gradients)) if i not in excluded_clients]
+            normal_id = [i for i in range(len(gradients)) if i not in excluded_clients]
             # print('numbers of participants:', len(gradients_used))
 
         if len(gradients_used) > 0:
@@ -237,7 +251,7 @@ def decompose_normal_distributions(data, n_components=2):
     max_cluster_data = data[labels == max_cluster_index]
     bounds = (max_cluster_data.min(), max_cluster_data.max())
     return max_cluster_data, bounds, gmm.means_, gmm.covariances_, gmm.weights_
-def plot_control_chart(client_id, client_means, distances_matrix, save_dir, L=3):
+def plot_control_chart(client_id, client_means, distances_matrix, save_dir, L=3, attack=None):
     """
     SPC-based anomaly detection algorithm.
     """
@@ -262,7 +276,7 @@ def plot_control_chart(client_id, client_means, distances_matrix, save_dir, L=3)
     plt.xlabel('Client ID')
     plt.ylabel('Average Distance')
     plt.legend()
-    plt.savefig(os.path.join(save_dir, 'control_chart_all_clients.png'))
+    plt.savefig(os.path.join(save_dir, f'{attack}_control_chart_all_clients.png'))
     plt.close()
 
     return ano, UCL, LCL

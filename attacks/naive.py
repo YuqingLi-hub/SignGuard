@@ -28,7 +28,7 @@ def zero_attack(byz_grads, *args, **kwargs):
 
 def random_attack(byz_grads, *args, **kwargs):
     # TODO//set random seed
-    torch.manual_seed(2021)
+    # torch.manual_seed(2021)
     num_byzs = len(byz_grads)
     if num_byzs == 0:
         return list()
@@ -41,7 +41,7 @@ def random_attack(byz_grads, *args, **kwargs):
 
 
 def noise_attack(byz_grads, *args, **kwargs):
-    torch.manual_seed(2021)
+    # torch.manual_seed(2021)
     num_byzs = len(byz_grads)
     if num_byzs == 0:
         return list()
