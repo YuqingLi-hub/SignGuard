@@ -13,4 +13,4 @@ JOB_NAME=${1:-SignGuard_AlignIns_test_default}
 #     sbatch --job-name="$JOB_NAME-$a" run.sh "$JOB_NAME" "$a"
 # done
 # Submit the job dynamically with the correct job name
-sbatch --job-name="$JOB_NAME" run.sh "$JOB_NAME"
+sbatch --job-name="$JOB_NAME" run.sh "$JOB_NAME" byzMean

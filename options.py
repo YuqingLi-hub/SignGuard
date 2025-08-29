@@ -48,6 +48,8 @@ def args_parser():
                         help="$delta$ for watermark")
     parser.add_argument('--k', type=float, default=0,
                         help="k for watermark")
+    parser.add_argument('--secret_key', type=str, default='mean',
+                        help="secret key for encrypting parameters")
     
 
     args = parser.parse_args()

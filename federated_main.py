@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import MultiStepLR, ExponentialLR
 from data_loader import get_dataset
-from running import test_classification, benignWorker, byzantineWorker
+from running import test_classification, Worker
 from models import CNN, ResNet18, ResNet9, SmallVGG, MLP
 from aggregators import aggregator
 from attacks import attack
@@ -12,7 +12,7 @@ from torch.nn.utils import parameters_to_vector
 import tools
 import time
 import copy
-from watermarks.qim import QIM
+from watermarks.modi_qim import QIM
 from torch.nn.utils import vector_to_parameters
 import os
 from datetime import date
@@ -74,11 +74,13 @@ def embedding_watermark_on_position(masks,whole_grads,args):
     print('masks:', masks)
     # if torch.isclose(sign_pos,0): 
     #     sign_pos = 1
-    true_delta = float(ini_delta*sign_pos+1e-5)
-    print("True delta:", true_delta)
-    Watermark = QIM(delta=true_delta)
+    # true_delta = float(ini_delta*sign_pos+1e-5)
+    # print("True delta:", true_delta)
+    # Watermark = QIM(delta=true_delta)
+    Watermark = args.watermark
     message = Watermark.random_msg(num_spars)
-
+    args.message = message
+    print('Embedding message:',message)
     t_ = grad_unwater.cpu().detach().numpy()
     w_ = Watermark.embed(t_,m=message,alpha=alpha,k=k)
 
@@ -166,40 +168,65 @@ if __name__ == '__main__':
             benign_grads = []
             byz_grads = []
             agent_data_sizes = {}
+            worker = Worker()
+            alpha_used = {}
             
+            print(f'\n--- Global Iteration : {it+1} | Clients Training Starts  ---')
             for idx in idx_users[:num_byzs]:
                 # if mask is not None:
                 #     args.masks = mask
                 #     args.watermark = Watermark
-                #     grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)  
-                grad, loss = byzantineWorker(model, data_loader[idx], optimizer, args)
+                #     grad, loss = worker.byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)  
+                grad, loss,alpha = worker.byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)
                 byz_grads.append(grad)
                 agent_data_sizes[idx] = len(data_loader[idx])
+                alpha_used[idx] = alpha
 
             for idx in idx_users[num_byzs:]:
                 # if mask is not None:
                 #     args.masks = mask
                 #     args.watermark = Watermark
-                #     grad, loss = benignWorker(model, data_loader[idx], optimizer, device, args, watermark=True)
-                grad, loss = benignWorker(model, data_loader[idx], optimizer, args)
+                #     grad, loss = worker.benignWorker(model, data_loader[idx], optimizer, device, args, watermark=True)
+                grad, loss,alpha = worker.benignWorker(model, data_loader[idx], optimizer, args, watermark=True)
                 benign_grads.append(grad)
                 local_losses.append(loss)
                 agent_data_sizes[idx] = len(data_loader[idx])
+                alpha_used[idx] = alpha
 
             # get byzantine gradient
             byz_grads = Attack(byz_grads, benign_grads, GAR)
+            # for i in range(len(byz_grads)):
+            #     byz_grads[i] = args.watermark.embed(byz_grads[i], alpha, delta, k)
             # get all local gradient
             local_grads = byz_grads + benign_grads
+
+            # try the accuracy if we don't unwatermark the local gradients
+            global_grad_w, selected_idx_w, isbyz_w = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
+            model_watermark = copy.deepcopy(model)
+            vector_to_parameters(global_grad_w, model_watermark.parameters())
+            acc_w = test_classification(device, model_watermark, test_loader)
+            print("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
+            print()
             # for alignIns, we need to flatten the gradients
             # flatten_global_grad = parameters_to_vector(
             #     [model.state_dict()[name] for name in model.state_dict()]).detach()
             flatten_global_grad = tools.get_parameter_values(model)
+            for i in range(len(local_grads)):
+                model_watermark = copy.deepcopy(model)
+                vector_to_parameters(local_grads[i], model_watermark.parameters())
+                acc_w = test_classification(device, model_watermark, test_loader)
+                print("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
+                print()
+                local_grads[i],m = args.watermark.detect(local_grads[i],alpha=alpha_used[idx_users[i]], delta=args.delta, k=args.k)
+
+
             # get global gradient
             global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
             
             if args.random_watermark:
                 if hasattr(GAR, 'masks'):
                     masks = GAR.masks if hasattr(GAR, 'masks') else None
+                    args.masks = masks
                     if masks is not None:
                         print('---------------------------------------------------')
                         # print(masks,masks[0],masks[1])
@@ -231,8 +258,47 @@ if __name__ == '__main__':
     k = args.k
     d = args.delta
     args.random_watermark = True
+    Watermark = QIM(delta=d)
+    args.watermark = Watermark
     print("Watermarking with alpha: {}, delta: {}, k: {}".format(alpha, d, k))
     for epoch in range(args.epochs):
+        ####### Watermarking before to Clients ##########
+        scale = 0.9 # some constantly changing scale to keep alpha dynamic
+        global_grads = tools.get_parameter_values(global_model)
+        global_grads_w = copy.deepcopy(global_grads)
+        num_spars = len(global_grads)
+        # only change alpha, after first epoch
+        if epoch != 0:
+            if args.masks is not None:
+                masks = args.masks
+                global_grads_w = copy.deepcopy(global_grads[masks[0]:masks[1]])
+                    # print(masks,masks[0],masks[1])
+                sign_mask = torch.sign(global_grads_w) 
+                num_spars = masks[1]-masks[0]
+                # get the sign of the gradients, and sum the sign gradients
+                # sign_grads = torch.sign(gradss)
+                # print("sign_grads", sign_grads)
+                sign_pos = (sign_mask.eq(1.0)).sum(dtype=torch.float32)/(num_spars)
+                sign_zero = (sign_mask.eq(0.0)).sum(dtype=torch.float32)/(num_spars)
+                sign_neg = (sign_mask.eq(-1.0)).sum(dtype=torch.float32)/(num_spars)
+                print('+',sign_pos,'0',sign_zero, '-', sign_neg)
+                print('masks:', masks)
+                scale = sign_pos
+                args.message = Watermark.random_msg(num_spars)
+            else:
+                scale = 1
+                idx = torch.randint(0, (len(global_grads_w) - num_spars),size=(1,)).item()
+            alpha = scale * args.alpha
+            # k = args.k
+            # d = args.delta
+        args.message = Watermark.random_msg(num_spars)
+        # global_model = args.watermark.embed(global_model, alpha=alpha, k=k)
+        masks = args.masks if hasattr(args, 'masks') else [0,len(global_grads)]
+        global_grads = embedding_watermark_on_position(masks=masks,whole_grads=global_grads,args=args)
+        # with torch.no_grad():
+        #     global_grads[masks[0]:masks[1]].copy_(global_grads_w)
+        vector_to_parameters(global_grads, global_model.parameters())
+        # print(tools.get_parameter_values(global_model))
         loss = train_parallel(args, global_model, train_loader, optimizer, epoch, scheduler)
         acc = test_classification(device, global_model, test_loader)
         print("Test Accuracy: {}%".format(acc))
