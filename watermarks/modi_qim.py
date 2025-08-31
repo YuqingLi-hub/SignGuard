@@ -5,6 +5,7 @@ date = date.today().strftime("%Y-%m-%d_m")
 import sys
 from collections import defaultdict
 from watermarks.tools import henon_map, plot_any
+import torch
 class QIM:
     def __init__(self, delta):
         # delta is the step size of quantization
@@ -13,13 +14,15 @@ class QIM:
         self.fAlpha = ['quasi_periodic','CTBCS']  # alpha function type, can be 'linear', 'logistic', or 'cosine' 'CTBCS'
         # self.fAlpha = ['quasi_periodic','henon']  # alpha function type, can be 'linear', 'logistic', or 'cosine' 'CTBCS'
         self.r = 3.9
-    def embed(self, x, m,alpha=0.51,k=0):
+    def embed(self, x:torch.tensor, m:np.array,alpha=0.51,k=0):
         """
         x is a vector of values to be quantized individually
         m is a binary vector of bits to be embeded
         returns: a quantized vector y
         """
         # make x type float
+        if not isinstance(x, np.ndarray):
+            x = x.detach().cpu().numpy()
         x = x.astype(float)
         # state alpha
         if self.fAlpha[1] == 'henon':
@@ -47,7 +50,7 @@ class QIM:
         q_mk = quanti((x-dm-k), d) + (dm + k)
         # dis = np.round((x-dm-k) / d) - (x-dm-k)/d
         # print('Theory Embedding distortion: $a*delta*(frac((s-d_m-k)/delta))', alpha*d*dis)
-        self.q_mk = q_mk
+        # self.q_mk = q_mk
         self.x = x
         y = q_mk * scale + x * (1 - scale)
         return y
@@ -108,7 +111,8 @@ class QIM:
         returns: a detected vector z_detected and a detected message m_detected
         """
         d = self.delta *scale_delta
-        
+        if not isinstance(z, np.ndarray):
+            z = z.detach().cpu().numpy()
         if self.fAlpha[1] == 'henon':
             alpha = quanti(alpha,self.delta/10)
             alpha = quasi_periodic(alpha)
@@ -132,9 +136,9 @@ class QIM:
         z = z.astype(float)
         m_detected = np.zeros_like(z, dtype=float)
         dm_hat = (quanti((z-k),d/M_cls)+k)
-        self.dm_hat = dm_hat
-        self.m_c = self.selective_round(dm_hat/d)%1
-        self.y_dm_hat = abs(z-self.q_mk)
+        # self.dm_hat = dm_hat
+        # self.m_c = self.selective_round(dm_hat/d)%1
+        # self.y_dm_hat = abs(z-self.q_mk)
         z_hat = (z-scale * dm_hat)/ (1-scale)
         d_values = [0,d/2.]
         rough_m = np.round((self.selective_round((dm_hat-k)/d)%1)*2)
@@ -190,7 +194,9 @@ def test_qim_1(delta=1,embedding_alpha=0.99,k=0,plot=False,test=False):
     qim = QIM(delta)
 
     # x = np.random.uniform(-500, 500, l).astype(float) # host sample
-    x = np.random.randn(l)
+    # x = np.random.randn(l)
+    x = torch.randn(l)
+    x = x.cpu().numpy()
     # x = np.linspace(-5, 5, l).astype(float)  # host sample
     print('Original x (first 5):', x[:5])
 

@@ -52,6 +52,7 @@ class signguard_multiclass(object):
             idx = torch.randint(0, (num_param - num_spars),size=(1,)).item()
             gradss = grads[:, idx:(idx+num_spars)]
             masks = (idx, idx+num_spars)
+            # print('SignGuard masks:',masks)
             # get the sign of the gradients, and sum the sign gradients
             sign_grads = torch.sign(gradss)
             # print("sign_grads", sign_grads)
@@ -81,7 +82,17 @@ class signguard_multiclass(object):
                 benign_idx2 = benign_idx2.intersection(set([int(i) for i in np.argwhere(labels==benign_class)]))
             else:
                 # print(time.time(), "Meanshift clustering")
-                bandwidth = estimate_bandwidth(sign_feat, quantile=0.5, n_samples=50)
+                # print(sign_feat.shape)
+                # print("sign_feat shape:", sign_feat.shape)
+                # print("min:", sign_feat.min(), "max:", sign_feat.max(), "std:", sign_feat.std())
+                uniq, counts = np.unique(sign_feat, axis=0, return_counts=True)
+                print("Unique rows:", len(uniq), " / total:", len(sign_feat))
+                print("Max duplicate count:", counts.max())
+                bandwidth = estimate_bandwidth(sign_feat, quantile=0.5, n_samples=min(50, len(sign_feat)))
+                if bandwidth <= 0:
+                    print("Warning: estimated bandwidth <= 0, defaulting to std or 1.0")
+                    bandwidth = np.std(sign_feat) or 1.0
+
                 ms = MeanShift(bandwidth=bandwidth, bin_seeding=True, cluster_all=False)
                 ms.fit(sign_feat)
                 labels = ms.labels_
