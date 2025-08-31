@@ -97,8 +97,16 @@ def get_gradient_values(model):
       Flat gradient (by reference: future calls to 'set_gradient' will modify it)
     """
 
-    gradient = torch.cat([torch.reshape(param.grad, (-1,)) for param in model.parameters()]).clone().detach()
-    return gradient
+    # gradient = torch.cat([torch.reshape(param.grad, (-1,)) for param in model.parameters()]).clone().detach()
+    # return gradient
+    grads = []
+    for param in model.parameters():
+        if param.grad is None:
+            grads.append(torch.zeros_like(param).flatten())  # fill missing grads with zeros
+        else:
+            grads.append(param.grad.flatten())
+    return torch.cat(grads).clone().detach()
+    
 
 def set_gradient_values(model, gradient):
     """ Overwrite the gradient with the given one.
@@ -259,25 +267,31 @@ def pairwise_sign_similarity_plus(data):
 # -------------------------------------------------------------------------- #
 
 
-def embedding_watermark_on_position(masks,whole_grads,Watermark,message,args):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+def embedding_watermark_on_position(masks,whole_grads,Watermark,message,args,model=None):
+    device = args.device
     alpha = args.alpha
-    
     k = args.k
     delta = args.delta
-    print('Alpha used in embedding: ',alpha,delta,k)
-    grad_unwater = copy.deepcopy(whole_grads[masks[0]:masks[1]])
-    t_ = grad_unwater
-    w_ = Watermark.embed(t_,m=message,alpha=alpha,k=k)
-    # w_grad = torch.tensor(w_,dtype=torch.float32).to(device)
+    print('Alpha used in embedding: ', alpha, delta, k)
 
-    with torch.no_grad():
-        whole_grads[masks[0]:masks[1]].copy_(w_)
-    # print("Reconstructed Gradient Error (should be same as Test Reconstructed Gradient Error):", torch.mean(torch.abs(grad_unwater - reconstructed_grad)))
-    # print('Distortion wat v.s. ori:',torch.mean(torch.abs(grad_unwater - w_grad)))
-    # print('Correctly update grads: ', torch.allclose(whole_grads[masks[0]:masks[1]],w_grad))
+    # Extract the section to watermark
+    grad_unwater = whole_grads[masks[0]:masks[1]]
+    w_ = Watermark.embed(grad_unwater, m=message, alpha=alpha, k=k)
+
+    # Update the flat tensor
+    whole_grads[masks[0]:masks[1]].copy_(w_)
+
+    # If model is provided, update the actual model parameters in-place
+    if model is not None:
+        with torch.no_grad():
+            start = 0
+            for p in model.parameters():
+                numel = p.numel()
+                p.data.copy_(whole_grads[start:start+numel].view_as(p))
+                start += numel
     return whole_grads
-def detect_recover_on_position(masks,whole_grads,Watermark,args):
+
+def detect_recover_on_position(masks,whole_grads,Watermark,args,model=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     alpha = args.alpha
     k = args.k
@@ -288,10 +302,14 @@ def detect_recover_on_position(masks,whole_grads,Watermark,args):
     r_w,mm = Watermark.detect(grad_water,alpha=alpha,k=k)
 
     # reconstructed_grad = torch.tensor(r_w,dtype=torch.float32).to(device)
-
-    with torch.no_grad():
-        whole_grads[masks[0]:masks[1]].copy_(r_w)
-    # print('Correctly update grads: ', torch.allclose(whole_grads[masks[0]:masks[1]],reconstructed_grad))
+    whole_grads[masks[0]:masks[1]].copy_(r_w)
+    if model is not None:
+        with torch.no_grad():
+            start = 0
+            for p in model.parameters():
+                numel = p.numel()
+                p.data.copy_(whole_grads[start:start+numel].view_as(p))
+                start += numel
     return whole_grads, mm
 
 if __name__ == "__main__":
