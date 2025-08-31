@@ -115,43 +115,33 @@ how to let client only use m to recover the global model? (without alpha, )
 #     print("Reconstructed Gradient Error (should be same as Test Reconstructed Gradient Error):", torch.mean(torch.abs(grad_unwater - reconstructed_grad)))
 #     return whole_grads
 
-def embedding_watermark(model,args,epoch):
-    Watermark = args.watermark
-    scale = 0.9 # some constantly changing scale to keep alpha dynamic
-    global_grads = tools.get_parameter_values(model)
-    global_grads_w = copy.deepcopy(global_grads)
-    num_spars = len(global_grads)
-    if hasattr(args, 'masks'):
-        masks = args.masks
-        global_grads_w = copy.deepcopy(global_grads[masks[0]:masks[1]])
-            # print(masks,masks[0],masks[1])
-        sign_mask = torch.sign(global_grads_w) 
-        num_spars = masks[1]-masks[0]
-        # get the sign of the gradients, and sum the sign gradients
-        # sign_grads = torch.sign(gradss)
-        # print("sign_grads", sign_grads)
-        sign_pos = (sign_mask.eq(1.0)).sum(dtype=torch.float32)/(num_spars)
-        sign_zero = (sign_mask.eq(0.0)).sum(dtype=torch.float32)/(num_spars)
-        sign_neg = (sign_mask.eq(-1.0)).sum(dtype=torch.float32)/(num_spars)
-        print('+',sign_pos,'0',sign_zero, '-', sign_neg)
-        print('Embedding watermark masks:', masks)
-        scale = sign_pos
-    else:
-        scale = 1
-        # idx = torch.randint(0, (len(global_grads_w) - num_spars),size=(1,)).item()
-    alpha = scale * args.alpha
-        # k = args.k
-        # d = args.delta
-    
-    _global_grads = copy.deepcopy(global_grads)
-    masks = args.masks if hasattr(args, 'masks') else [0,1000]
-    print('origin grads:',global_grads[masks[0]:masks[0]+10])
-    args.message = Watermark.random_msg(masks[1]-masks[0])
-    print('Embedding locations Watermark masks: ',masks)
-    _global_grads = embedding_watermark_on_position(masks=masks,whole_grads=_global_grads,Watermark=Watermark,message=args.message,args=args)
-    print(Watermark.x[:10],_global_grads[masks[0]:masks[0]+10],global_grads[masks[0]:masks[0]+10])
-    vector_to_parameters(_global_grads, model.parameters())
-    return model, alpha
+def embedding_watermark_on_position(masks, whole_grads, Watermark, message, args, model=None):
+    """
+    Updates model parameters in-place with watermarked gradients.
+    If model is None, it will just modify the flat tensor.
+    """
+    device = args.device
+    alpha = args.alpha
+    k = args.k
+    delta = args.delta
+    print('Alpha used in embedding: ', alpha, delta, k)
+
+    # Extract the section to watermark
+    grad_unwater = whole_grads[masks[0]:masks[1]]
+    w_ = Watermark.embed(grad_unwater, m=message, alpha=alpha, k=k)
+
+    # Update the flat tensor
+    whole_grads[masks[0]:masks[1]].copy_(w_)
+
+    # If model is provided, update the actual model parameters in-place
+    if model is not None:
+        with torch.no_grad():
+            start = 0
+            for p in model.parameters():
+                numel = p.numel()
+                p.data.copy_(whole_grads[start:start+numel].view_as(p))
+                start += numel
+    return whole_grads
 
 if __name__ == '__main__':
     # TODO: set random seed, numpy
@@ -159,10 +149,37 @@ if __name__ == '__main__':
     torch.manual_seed(2021)
     args = args_parser()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    args.device = device
     print(device)
     print(args.dataset)
     # load dataset and user groups
     train_loader, test_loader = get_dataset(args)
+#     print("--- Checking Data Loaders for Identity ---")
+
+#     # Step 1: Check if the loaders are the same object in memory (they shouldn't be)
+#     print(f"Is loader 0 the same object as loader 1? {id(train_loader[0]) == id(train_loader[1])}")
+#     # Step 2: Grab the first batch from two different loaders
+# # Use a try-except block in case a loader is empty
+#     try:
+#         images_0, labels_0 = next(iter(train_loader[0]))
+#         images_1, labels_1 = next(iter(train_loader[1]))
+
+#         # Step 3: Compare the data content
+#         # torch.allclose() is the most reliable way to compare floating-point tensors
+#         is_data_identical = torch.allclose(images_0, images_1)
+
+#         print(f"Are the contents of the first batch identical? {is_data_identical}")
+#         print(f"Shape of batch 0: {images_0.shape}")
+#         print(f"Shape of batch 1: {images_1.shape}")
+
+#         # Optional: Print a checksum of the data
+#         print(f"Sum of images in batch 0: {torch.sum(images_0)}")
+#         print(f"Sum of images in batch 1: {torch.sum(images_1)}")
+
+#     except StopIteration:
+#         print("Warning: One of the data loaders is empty.")
+
+#     print("--- Check Complete ---")
     # construct model
     if args.dataset == 'cifar':
         # if args.agg_rule == 'AlignIns':
@@ -216,7 +233,10 @@ if __name__ == '__main__':
             data_loader.append(iter(train_loader[idx]))
 
         for it in range(iteration):
-            model, _ = embedding_watermark(model,args,it)
+            # masks = args.masks if hasattr(args, 'masks') else [0, 1000]
+            # message = args.watermark.random_msg(masks[1]-masks[0])
+            # with torch.no_grad():
+            #     embedding_watermark_on_position(masks=masks,whole_grads=tools.get_parameter_values(model),Watermark=args.watermark,message=message,args=args,model=model)
             m = max(int(args.frac * num_users), 1)
             idx_users = np.random.choice(range(num_users), m, replace=False)
             idx_users = sorted(idx_users)
@@ -232,8 +252,9 @@ if __name__ == '__main__':
                 # if mask is not None:
                 #     args.masks = mask
                 #     args.watermark = Watermark
-                #     grad, loss = worker.byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)  
-                grad, loss,alpha = worker.byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)
+                #     grad, loss = worker.byzantineWorker(model, data_loader[idx], optimizer, args, watermark=True)
+                local_model = copy.deepcopy(model)
+                grad, loss,alpha = worker.byzantineWorker(local_model, data_loader[idx], optimizer, args, watermark=True)
                 byz_grads.append(grad)
                 agent_data_sizes[idx] = len(data_loader[idx])
                 alpha_used[idx] = alpha
@@ -243,7 +264,8 @@ if __name__ == '__main__':
                 #     args.masks = mask
                 #     args.watermark = Watermark
                 #     grad, loss = worker.benignWorker(model, data_loader[idx], optimizer, device, args, watermark=True)
-                grad, loss,alpha = worker.benignWorker(model, data_loader[idx], optimizer, args, watermark=True)
+                local_model = copy.deepcopy(model)
+                grad, loss,alpha = worker.benignWorker(local_model, data_loader[idx], optimizer, args, watermark=True)
                 benign_grads.append(grad)
                 local_losses.append(loss)
                 agent_data_sizes[idx] = len(data_loader[idx])
@@ -278,9 +300,11 @@ if __name__ == '__main__':
                     print("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
                     print()
                 
-                
+                print('Watermarked:',local_grads[i][masks[0]:masks[1]][:10])
                 recovered_grad,m = args.watermark.detect(copy.deepcopy(local_grads[i][masks[0]:masks[1]]),alpha=alpha_used[idx_users[i]], k=args.k)
-                local_grads[i][masks[0]:masks[1]] = torch.tensor(recovered_grad,dtype=torch.float32).to(device)
+                local_grads[i][masks[0]:masks[1]] = recovered_grad.to(device)
+                # local_grads[i][masks[0]:masks[1]] = detect_recover_on_position(masks=masks,whole_grads=local_grads[i],Watermark=args.watermark,args=args)
+                print('Recovered',local_grads[i][masks[0]:masks[1]][:10])
 
             # get global gradient
             global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)

@@ -269,10 +269,10 @@ def embedding_watermark_on_position(masks,whole_grads,Watermark,message,args):
     grad_unwater = copy.deepcopy(whole_grads[masks[0]:masks[1]])
     t_ = grad_unwater
     w_ = Watermark.embed(t_,m=message,alpha=alpha,k=k)
-    w_grad = torch.tensor(w_,dtype=torch.float32).to(device)
+    # w_grad = torch.tensor(w_,dtype=torch.float32).to(device)
 
     with torch.no_grad():
-        whole_grads[masks[0]:masks[1]].copy_(w_grad)
+        whole_grads[masks[0]:masks[1]].copy_(w_)
     # print("Reconstructed Gradient Error (should be same as Test Reconstructed Gradient Error):", torch.mean(torch.abs(grad_unwater - reconstructed_grad)))
     # print('Distortion wat v.s. ori:',torch.mean(torch.abs(grad_unwater - w_grad)))
     # print('Correctly update grads: ', torch.allclose(whole_grads[masks[0]:masks[1]],w_grad))
@@ -287,10 +287,10 @@ def detect_recover_on_position(masks,whole_grads,Watermark,args):
 
     r_w,mm = Watermark.detect(grad_water,alpha=alpha,k=k)
 
-    reconstructed_grad = torch.tensor(r_w,dtype=torch.float32).to(device)
+    # reconstructed_grad = torch.tensor(r_w,dtype=torch.float32).to(device)
 
     with torch.no_grad():
-        whole_grads[masks[0]:masks[1]].copy_(reconstructed_grad)
+        whole_grads[masks[0]:masks[1]].copy_(r_w)
     # print('Correctly update grads: ', torch.allclose(whole_grads[masks[0]:masks[1]],reconstructed_grad))
     return whole_grads, mm
 
