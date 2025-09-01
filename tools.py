@@ -267,11 +267,11 @@ def pairwise_sign_similarity_plus(data):
 # -------------------------------------------------------------------------- #
 
 
-def embedding_watermark_on_position(masks,whole_grads,Watermark,message,args,model=None):
+def embedding_watermark_on_position(masks,whole_grads,Watermark,message,alpha,k,model=None):
     device = args.device
-    alpha = args.alpha
-    k = args.k
-    delta = args.delta
+    # alpha = args.alpha
+    # k = args.k
+    # delta = args.delta
     # print('Alpha used in embedding: ', alpha, delta, k)
 
     # Extract the section to watermark
@@ -292,11 +292,11 @@ def embedding_watermark_on_position(masks,whole_grads,Watermark,message,args,mod
                 start += numel
     return whole_grads
 
-def detect_recover_on_position(masks,whole_grads,Watermark,args,model=None):
+def detect_recover_on_position(masks,whole_grads,Watermark,alpha,k,model=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    alpha = args.alpha
-    k = args.k
-    delta = args.delta
+    # alpha = args.alpha
+    # k = args.k
+    # delta = args.delta
     # print('Alpha used in detecting: ',alpha,delta,k)
     grad_water = copy.deepcopy(whole_grads[masks[0]:masks[1]])
     grad_water = grad_water.detach().cpu()

@@ -11,7 +11,7 @@ from sysidentpy.basis_function import Fourier
 if __name__ == "__main__":
     # np.random.seed(42)
     l = 10000 # binary message length
-    delta = 1.0 # quantization step (use float for consistency)
+    delta = 1.0 
     alpha = 0.9 
     qim = QIM(delta)
     k = 0 
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     basis_function = Legendre(degree=2)
     model = FROLS(ylag=2, xlag=2, basis_function=basis_function)
     y_train, y_valid = scale[:800], scale[800:]
-    # x_train, x_valid = k_input[:800], k_input[800:]
+    # 
     x = np.ones(scale.shape)*initial_x
     x_train, x_valid = x[:800], x[800:]
 
@@ -80,10 +80,12 @@ if __name__ == "__main__":
     model = FROLS(ylag=2, xlag=2, basis_function=basis_function)
     y = np.ones(scale.shape)*initial_x
     y_train, y_valid = y[:800], y[800:]
+    x_train, x_valid = k_input[:800], k_input[800:]
     model.fit(y=x_train, X=y_train)
     x_pred = model.predict(y=x_valid, X=y_valid)
 
     res = x_valid - x_pred
+    # print(x_valid[:10],x_valid.mean())
     fit = 100 * (1 - np.linalg.norm(res) / np.linalg.norm(x_valid - x_valid.mean()))
     print("k identification: Fit% (validation):", fit)
     # # Access the state-space matrices

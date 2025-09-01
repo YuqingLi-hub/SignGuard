@@ -12,11 +12,21 @@ from torch.nn.utils import vector_to_parameters
 from tools import embedding_watermark_on_position,detect_recover_on_position
 # from logger import get_logger
 # logger = get_logger()
+class Worker():
+    def __init__(self,delta,alpha,k,secret_param='mean'):
+        self.init_delta = delta
+        self.init_alpha = alpha
+        self.init_k = k
+        # if secret_param == 'mean':
+        #     self.
 def all_worker(model, train_loader, optimizer, args, water=False,malicious=True):
     logger = args.logger
     device = args.device
     attack = args.attack
     masks = args.masks if hasattr(args, 'masks') else [0, 1000]
+    alpha = args.alpha
+    k = args.k
+    delta = args.delta
     Qim = None
     # recovered_grads = None
     global_param = tools.get_parameter_values(model)
@@ -27,14 +37,15 @@ def all_worker(model, train_loader, optimizer, args, water=False,malicious=True)
         # global_grads = tools.get_gradient_values(model)
         # print('Received gradients',global_grads[masks[0]:masks[1]][:10])
         
-        Qim = QIM(args.delta)
+        Qim = QIM(delta)
 
         # Recover watermark
         global_param, message = detect_recover_on_position(
             masks=masks,
             whole_grads=global_param,
             Watermark=Qim,
-            args=args,
+            alpha=alpha,
+            k=k,
             model=model
         )
         logger.info(f'Client Recovered params {global_param[masks[0]:masks[1]][:10]}')
@@ -77,13 +88,13 @@ def all_worker(model, train_loader, optimizer, args, water=False,malicious=True)
     if water:
         _user_param = copy.deepcopy(updated_grads)
         user_grad_w = embedding_watermark_on_position(
-            masks, _user_param, Qim, message, args, model=model
+            masks, _user_param, Qim, message, alpha=alpha,k=k, model=model
         )
         logger.info(f'Watermarked (first 10): {user_grad_w[masks[0]:masks[1]][:10]}')
     else:
         user_grad_w = updated_grads
   
-    return user_grad_w, loss.item(), args.alpha
+    return user_grad_w, loss.item(), alpha
     # # ------------------ Training step ------------------
     # model.train()
     
@@ -136,12 +147,3 @@ def test_classification(device, model, test_loader):
 
     return acc
 
-
-def get_parameter_values(model):
-    """ Get (optionally make each parameter's gradient) a reference to the flat gradient.
-    Returns:
-      Flat gradient (by reference: future calls to 'set_gradient' will modify it)
-    """
-
-    parameter = torch.cat([torch.reshape(param.data, (-1,)) for param in model.parameters()])
-    return parameter
