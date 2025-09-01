@@ -272,11 +272,12 @@ def embedding_watermark_on_position(masks,whole_grads,Watermark,message,args,mod
     alpha = args.alpha
     k = args.k
     delta = args.delta
-    print('Alpha used in embedding: ', alpha, delta, k)
+    # print('Alpha used in embedding: ', alpha, delta, k)
 
     # Extract the section to watermark
     grad_unwater = whole_grads[masks[0]:masks[1]]
-    w_ = Watermark.embed(grad_unwater, m=message, alpha=alpha, k=k)
+    grad_unwater = grad_unwater.detach().cpu()
+    w_ = Watermark.embed(grad_unwater, m=message, alpha=alpha, k=k).to(device)
 
     # Update the flat tensor
     whole_grads[masks[0]:masks[1]].copy_(w_)
@@ -296,13 +297,13 @@ def detect_recover_on_position(masks,whole_grads,Watermark,args,model=None):
     alpha = args.alpha
     k = args.k
     delta = args.delta
-    print('Alpha used in detecting: ',alpha,delta,k)
+    # print('Alpha used in detecting: ',alpha,delta,k)
     grad_water = copy.deepcopy(whole_grads[masks[0]:masks[1]])
-
+    grad_water = grad_water.detach().cpu()
     r_w,mm = Watermark.detect(grad_water,alpha=alpha,k=k)
 
-    # reconstructed_grad = torch.tensor(r_w,dtype=torch.float32).to(device)
-    whole_grads[masks[0]:masks[1]].copy_(r_w)
+    reconstructed_grad = r_w.to(device)
+    whole_grads[masks[0]:masks[1]].copy_(reconstructed_grad)
     if model is not None:
         with torch.no_grad():
             start = 0
@@ -310,8 +311,16 @@ def detect_recover_on_position(masks,whole_grads,Watermark,args,model=None):
                 numel = p.numel()
                 p.data.copy_(whole_grads[start:start+numel].view_as(p))
                 start += numel
-    return whole_grads, mm
-
+    return whole_grads, mm.to(device)
+def update_gradient(whole_grads, model):
+    with torch.no_grad():
+        start = 0
+        for p in model.parameters():
+            numel = p.numel()
+            g = whole_grads[start:start+numel].view_as(p)
+            if p.grad is not None:
+                p.grad.copy_(g)  
+            start += numel
 if __name__ == "__main__":
     from watermarks.modi_qim import QIM
     from options import args_parser

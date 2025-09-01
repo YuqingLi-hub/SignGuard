@@ -1,3 +1,5 @@
+import os
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import numpy as np # linear algebra
 import torch
 import torch.nn as nn
@@ -18,6 +20,20 @@ import os
 from datetime import date
 date = date.today().strftime("%Y-%m-%d_")
 from tools import embedding_watermark_on_position,detect_recover_on_position
+# import logging
+from logger import get_logger
+
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)  # If multiple GPUs
+np.random.seed(0)
+
+# Force deterministic algorithms
+# torch.use_deterministic_algorithms(True)
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+torch.use_deterministic_algorithms(True, warn_only=True)
+
 # make sure that there exists CUDA，and show CUDA：
 # print(device)
 #
@@ -124,11 +140,13 @@ def embedding_watermark_on_position(masks, whole_grads, Watermark, message, args
     alpha = args.alpha
     k = args.k
     delta = args.delta
-    print('Alpha used in embedding: ', alpha, delta, k)
+    # print('Alpha used in embedding: ', alpha, delta, k)
     # Extract the section to watermark
     grad_unwater = whole_grads[masks[0]:masks[1]]
-    print('Unwatermarked:',grad_unwater[:10])
-    w_ = Watermark.embed(grad_unwater, m=message, alpha=alpha, k=k)
+    grad_unwater = grad_unwater.detach().cpu()
+    # print('Unwatermarked:',grad_unwater[:10])
+    logger.info(f'Unwatermarked:{grad_unwater[:10]}')
+    w_ = Watermark.embed(grad_unwater, m=message, alpha=alpha, k=k).to(device)
 
     # Update the flat tensor
     whole_grads[masks[0]:masks[1]].copy_(w_)
@@ -136,13 +154,14 @@ def embedding_watermark_on_position(masks, whole_grads, Watermark, message, args
     # If model is provided, update the actual model parameters in-place
     if model is not None:
         with torch.no_grad():
-            start = 0
-            for p in model.parameters():
-                numel = p.numel()
-                g = whole_grads[start:start+numel].view_as(p)
-                p.grad.copy_(g)  
-                start += numel
-    print('Checking model gradients',tools.get_gradient_values(model=model)[masks[0]:masks[1]][:10])
+            vector_to_parameters(whole_grads,model.parameters())
+        #     start = 0
+        #     for p in model.parameters():
+        #         numel = p.numel()
+        #         g = whole_grads[start:start+numel].view_as(p)
+        #         p.grad.copy_(g)  
+        #         start += numel
+    # print('Checking model gradients',tools.get_gradient_values(model=model)[masks[0]:masks[1]][:10])
     return whole_grads
 def update_gradient(whole_grads, model):
     with torch.no_grad():
@@ -154,14 +173,25 @@ def update_gradient(whole_grads, model):
                 p.grad.copy_(g)  
             start += numel
 if __name__ == '__main__':
-    # TODO: set random seed, numpy
-    np.random.seed(2021)
-    torch.manual_seed(2021)
+    # np.random.seed(2021)
+    # torch.manual_seed(2021)
     args = args_parser()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     args.device = device
-    print(device)
-    print(args.dataset)
+    logger = get_logger(name=args.job,
+        log_file=f'logs/{args.job}.log'  # saved in logs/ folder
+    )
+    args.logger = logger
+    # print(device)
+    # print(args.dataset)
+    # logging.basicConfig(
+    #     filename=f'{date}_{args.job}.log',         # Write logs to file
+    #     filemode='w',
+    #     level=logging.INFO,              # Minimum level to log
+    #     format='%(asctime)s [%(levelname)s] %(message)s',  # Log format
+    #     datefmt='%Y-%m-%d %H:%M:%S'     # Timestamp format
+    # )
+    logger.info(f'Using {device}, and Dataset {args.dataset}')
     # load dataset and user groups
     train_loader, test_loader = get_dataset(args)
     # construct model
@@ -205,8 +235,8 @@ if __name__ == '__main__':
     
 
     def train_parallel(args, model, train_loader, optimizer, epoch, scheduler):
-        
-        print(f'\n---- Global Training Epoch : {epoch+1} ----')
+        logger.info(f'\n---- Global Training Epoch : {epoch+1} ----')
+        # print(f'\n---- Global Training Epoch : {epoch+1} ----')
         num_users = args.num_users
         num_byzs = args.num_byzs
         # num_byzs = np.random.randint(1,20)
@@ -217,13 +247,13 @@ if __name__ == '__main__':
             data_loader.append(iter(train_loader[idx]))
 
         for it in range(iteration):
-            whole_grads = tools.get_gradient_values(model=model)
+            whole_param = tools.get_parameter_values(model=model)
             if it != 0 or epoch !=0:
                 masks = args.masks if args.masks is not None else [0, 1000]
                 args.watermark = QIM(delta=args.delta)
                 message = args.watermark.random_msg(masks[1]-masks[0])
                 with torch.no_grad():
-                    whole_grads = embedding_watermark_on_position(masks=masks,whole_grads=tools.get_gradient_values(model),Watermark=args.watermark,message=message,args=args,model=model)
+                    whole_param = embedding_watermark_on_position(masks=masks,whole_grads=tools.get_parameter_values(model),Watermark=args.watermark,message=message,args=args,model=model)
             m = max(int(args.frac * num_users), 1)
             idx_users = np.random.choice(range(num_users), m, replace=False)
             idx_users = sorted(idx_users)
@@ -234,20 +264,23 @@ if __name__ == '__main__':
             # worker = Worker()
             alpha_used = {}
             # global_state = copy.deepcopy(model.state_dict())
-            print('Checking model gradients',tools.get_gradient_values(model=model)[:10])
-            print(f'\n--- Global Iteration : {it+1} | Clients Training Starts  ---')
+            global_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            # print('Checking model gradients',tools.get_gradient_values(model=model)[:10])
+            # print(f'\n--- Global Iteration : {it+1} | Clients Training Starts  ---')
+            logger.info(f'--- Global Iteration : {it+1} | Clients Training Starts  ---')
             for idx in idx_users[:num_byzs]:
                 # model.load_state_dict(global_state)
                 
+                # local_model = copy.deepcopy(model)
+                # for p in local_model.parameters():
+                #     if p.grad is None:
+                #         p.grad = torch.zeros_like(p.data)
+                # update_gradient(whole_grads=whole_grads,model=local_model)
                 local_model = copy.deepcopy(model)
-                for p in local_model.parameters():
-                    if p.grad is None:
-                        p.grad = torch.zeros_like(p.data)
-                update_gradient(whole_grads=whole_grads,model=local_model)
-                
+                local_model.load_state_dict(global_state)
                 if hasattr(args, 'watermark'):
                     args.masks = masks
-                    print('Checking model gradients for clients',tools.get_gradient_values(model=model)[masks[0]:masks[0]+10])
+                    # print('Checking model gradients for clients',tools.get_gradient_values(model=model)[masks[0]:masks[0]+10])
                     grad, loss,alpha = all_worker(local_model, data_loader[idx], optimizer, args, water=True,malicious=True)
                     alpha_used[idx] = alpha
                 else:
@@ -257,11 +290,14 @@ if __name__ == '__main__':
 
             for idx in idx_users[num_byzs:]:
                 # model.load_state_dict(global_state)
+                # local_model = copy.deepcopy(model)
+                
+                # for p in local_model.parameters():
+                #     if p.grad is None:
+                #         p.grad = torch.zeros_like(p.data)
+                # update_gradient(whole_grads=whole_grads,model=local_model)
                 local_model = copy.deepcopy(model)
-                for p in local_model.parameters():
-                    if p.grad is None:
-                        p.grad = torch.zeros_like(p.data)
-                update_gradient(whole_grads=whole_grads,model=local_model)
+                local_model.load_state_dict(global_state)
                 if hasattr(args, 'watermark'):
                     args.masks = masks
                     grad, loss,alpha = all_worker(local_model, data_loader[idx], optimizer, args, water=True,malicious=False)
@@ -278,20 +314,23 @@ if __name__ == '__main__':
             # get all local gradient
             local_grads = byz_grads + benign_grads
             flatten_global_grad = tools.get_parameter_values(model)
-            if epoch != 0:
+            if it != 0 or epoch !=0:
                 # print(flatten_global_grad.shape,len(local_grads))
-                print('Aggregating the watermarked local gradients...')
+                # print('Aggregating the watermarked local gradients...')
+                logger.info('Aggregating the watermarked local gradients...')
                 # try the accuracy if we don't unwatermark the local gradients
                 global_grad_w, selected_idx_w, isbyz_w = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
                 model_watermark = copy.deepcopy(model)
                 vector_to_parameters(global_grad_w, model_watermark.parameters())
                 acc_w = test_classification(device, model_watermark, test_loader)
-                print("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
-                print()
+                # print("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
+                logger.info("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
+                # print()
                 # for alignIns, we need to flatten the gradients
                 # flatten_global_grad = parameters_to_vector(
                 #     [model.state_dict()[name] for name in model.state_dict()]).detach()
-                print('\nRecovering the local gradients...')
+                # print('\nRecovering the local gradients...')
+                logger.info('Recovering the local gradients...')
                 
                 for i in range(len(local_grads)):
                     masks = args.masks if hasattr(args, 'masks') else [0,1000]
@@ -299,23 +338,28 @@ if __name__ == '__main__':
                         model_watermark = copy.deepcopy(model)
                         vector_to_parameters(local_grads[i], model_watermark.parameters())
                         acc_w = test_classification(device, model_watermark, test_loader)
-                        print('Watermark masks: ',masks)
-                        print("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
-                        print()
+                        # print('Watermark masks: ',masks)
+                        # print("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
+                        # print()
+                        logger.info(f'Watermark masks: {masks}')
+                        logger.info("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
                     
-                    print('Watermarked:',local_grads[i][masks[0]:masks[1]][:10])
+                    # print('Watermarked:',local_grads[i][masks[0]:masks[1]][:10])
+                    logger.info(f'Watermarked:{local_grads[i][masks[0]:masks[1]][:10]}')
                     recovered_grad,m = args.watermark.detect(copy.deepcopy(local_grads[i][masks[0]:masks[1]]),alpha=alpha_used[idx_users[i]], k=args.k)
                     local_grads[i][masks[0]:masks[1]] = recovered_grad.to(device)
                     # local_grads[i][masks[0]:masks[1]] = detect_recover_on_position(masks=masks,whole_grads=local_grads[i],Watermark=args.watermark,args=args)
-                    print('Recovered',local_grads[i][masks[0]:masks[1]][:10])
+                    # print('Recovered',local_grads[i][masks[0]:masks[1]][:10])
+                    logger.info(f'Recovered:{local_grads[i][masks[0]:masks[1]][:10]}')
 
             # get global gradient
             global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
             model_watermark = copy.deepcopy(model)
             vector_to_parameters(global_grad, model_watermark.parameters())
             acc_w = test_classification(device, model_watermark, test_loader)
-            print("Aggregation Recovered model Test Accuracy: {}%".format(acc_w))
-            print()
+            # print("Aggregation Recovered model Test Accuracy: {}%".format(acc_w))
+            logger.info("Aggregation Recovered model Test Accuracy: {}\n%".format(acc_w))
+            # print()
             masks = GAR.masks if hasattr(GAR, 'masks') else None
             args.masks = masks
             # if args.random_watermark:
@@ -342,8 +386,10 @@ if __name__ == '__main__':
             iter_loss.append(loss_avg)
 
             if (it + 1) % 10 == 0:  # print every 10 local iterations
-                print('[epoch %d, %.2f%%] loss: %.5f' %
+                logger.info('[epoch %d, %.2f%%] loss: %.5f' %
                       (epoch + 1, 100 * ((it + 1)/iteration), loss_avg), "--- byz. attack succ. rate:", isbyz, '--- selected number:', len(selected_idx))
+                # print('[epoch %d, %.2f%%] loss: %.5f' %
+                #       (epoch + 1, 100 * ((it + 1)/iteration), loss_avg), "--- byz. attack succ. rate:", isbyz, '--- selected number:', len(selected_idx))
 
         if scheduler is not None:
             scheduler.step()
@@ -355,13 +401,15 @@ if __name__ == '__main__':
     args.random_watermark = True
     # Watermark = QIM(delta=d)
     # args.watermark = Watermark
-    print("Watermarking with alpha: {}, delta: {}, k: {}".format(alpha, d, k))
+    # print("Watermarking with alpha: {}, delta: {}, k: {}".format(alpha, d, k))
+    logger.info("Watermarking with alpha: {}, delta: {}, k: {}".format(alpha, d, k))
     for epoch in range(args.epochs):
         ####### Watermarking before to Clients ##########
         # only change alpha, after first epoch
         loss = train_parallel(args, global_model, train_loader, optimizer, epoch, scheduler)
         acc = test_classification(device, global_model, test_loader)
-        print("Test Accuracy: {}%".format(acc))
+        # print("Test Accuracy: {}%".format(acc))
+        logger.info("Test Accuracy: {}%".format(acc))
 
         epoch_watermark_check = False
 

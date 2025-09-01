@@ -1,4 +1,4 @@
-from modi_qim import QIM, quasi_periodic, quanti
+from modi_qim import QIM, quasi_periodic, quanti, logistic_map,CTBCS
 from tools import henon_map
 import numpy as np
 from sysidentpy.model_structure_selection import FROLS
@@ -34,6 +34,8 @@ if __name__ == "__main__":
     henon_points = np.array(henon_map(alpha,k,n=iterations))
     scale,k = henon_points[:,0]/6+0.75,henon_points[:,1]
 
+
+
     # print(f"\n--- Embedding watermark with fixed alpha = {embedding_alpha}, delta = {delta}, k = {true_k} ---")
     # print(f"")
     # y_watermarked = qim.embed(x, msg, alpha=embedding_alpha, k=true_k)
@@ -63,7 +65,9 @@ if __name__ == "__main__":
     basis_function = Legendre(degree=2)
     model = FROLS(ylag=2, xlag=2, basis_function=basis_function)
     y_train, y_valid = scale[:800], scale[800:]
-    x_train, x_valid = k_input[:800], k_input[800:]
+    # x_train, x_valid = k_input[:800], k_input[800:]
+    x = np.ones(scale.shape)*initial_x
+    x_train, x_valid = x[:800], x[800:]
 
     model.fit(y=y_train, X=x_train)
     y_pred = model.predict(y=y_valid, X=x_valid)
@@ -74,6 +78,8 @@ if __name__ == "__main__":
 
     basis_function = Legendre(degree=2)
     model = FROLS(ylag=2, xlag=2, basis_function=basis_function)
+    y = np.ones(scale.shape)*initial_x
+    y_train, y_valid = y[:800], y[800:]
     model.fit(y=x_train, X=y_train)
     x_pred = model.predict(y=x_valid, X=y_valid)
 
@@ -108,6 +114,51 @@ if __name__ == "__main__":
     print("Fit%:", fit)
 
 
+###################### logistic map #####################################
+    qim.fAlpha = ['quasi_periodic','logistic']
+    y = qim.alpha_func(initial_x,l).detach().cpu().numpy().reshape(-1,1)
+    # y = []
+    # x = initial_x
+    # for _ in range(l):
+    #     y.append(x)
+    #     x = logistic_map(x)
+    # return np.clip(points, 0.5+eps, 1-eps)  # Ensure alpha is within [0, 1]
+    # y = (np.array(y)*0.5+0.5).reshape(-1,1)
+    basis_function = Legendre(degree=2)
+    model = FROLS(ylag=2, xlag=2, basis_function=basis_function)
+    y_train, y_valid = y[:800], y[800:]
+    # x_train, x_valid = k_input[:800], k_input[800:]
+    x = np.ones(y.shape)*initial_x
+    x_train, x_valid = x[:800], x[800:]
+    model.fit(y=y_train, X=x_train)
+    y_pred = model.predict(y=y_valid, X=x_valid)
+
+    res = y_valid - y_pred
+    fit = 100 * (1 - np.linalg.norm(res) / np.linalg.norm(y_valid - y_valid.mean()))
+    print("Logistic Alpha identification Fit% (validation):", fit)
+
+#################### CTBCS ######################################
+    qim.fAlpha = ['quasi_periodic','CTBCS']
+    y = qim.alpha_func(initial_x,l).detach().cpu().numpy().reshape(-1,1)
+    # y = []
+    # x = initial_x
+    # for _ in range(l):
+    #     y.append(x)
+    #     x = logistic_map(x)
+    # return np.clip(points, 0.5+eps, 1-eps)  # Ensure alpha is within [0, 1]
+    # y = (np.array(y)*0.5+0.5).reshape(-1,1)
+    basis_function = Legendre(degree=2)
+    model = FROLS(ylag=2, xlag=2, basis_function=basis_function)
+    y_train, y_valid = y[:800], y[800:]
+    # x_train, x_valid = k_input[:800], k_input[800:]
+    x = np.ones(y.shape)*initial_x
+    x_train, x_valid = x[:800], x[800:]
+    model.fit(y=y_train, X=x_train)
+    y_pred = model.predict(y=y_valid, X=x_valid)
+
+    res = y_valid - y_pred
+    fit = 100 * (1 - np.linalg.norm(res) / np.linalg.norm(y_valid - y_valid.mean()))
+    print("CTBCS Alpha identification Fit% (validation):", fit)
 
     # # Prepare input/output
     # scale = (henon_points[:,0]/6 + 0.75).reshape(-1,1)   # output
