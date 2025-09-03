@@ -3,7 +3,7 @@ import torch
 import types
 import math
 import numpy as np
-
+from torch.nn.utils import vector_to_parameters
 # --------------------------------------------------------------------- #
 # Gradient access
 
@@ -285,11 +285,12 @@ def embedding_watermark_on_position(masks,whole_grads,Watermark,message,alpha,k,
     # If model is provided, update the actual model parameters in-place
     if model is not None:
         with torch.no_grad():
-            start = 0
-            for p in model.parameters():
-                numel = p.numel()
-                p.data.copy_(whole_grads[start:start+numel].view_as(p))
-                start += numel
+            vector_to_parameters(whole_grads,model.parameters())
+            # start = 0
+            # for p in model.parameters():
+            #     numel = p.numel()
+            #     p.data.copy_(whole_grads[start:start+numel].view_as(p))
+            #     start += numel
     return whole_grads
 
 def detect_recover_on_position(masks,whole_grads,Watermark,alpha,k,model=None):
@@ -306,11 +307,12 @@ def detect_recover_on_position(masks,whole_grads,Watermark,alpha,k,model=None):
     whole_grads[masks[0]:masks[1]].copy_(reconstructed_grad)
     if model is not None:
         with torch.no_grad():
-            start = 0
-            for p in model.parameters():
-                numel = p.numel()
-                p.data.copy_(whole_grads[start:start+numel].view_as(p))
-                start += numel
+            vector_to_parameters(whole_grads,model.parameters())
+            # start = 0
+            # for p in model.parameters():
+            #     numel = p.numel()
+            #     p.data.copy_(whole_grads[start:start+numel].view_as(p))
+            #     start += numel
     return whole_grads, mm.to(device)
 def update_gradient(whole_grads, model):
     with torch.no_grad():

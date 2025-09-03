@@ -317,20 +317,20 @@ if __name__ == '__main__':
             if it != 0 or epoch !=0:
                 # print(flatten_global_grad.shape,len(local_grads))
                 # print('Aggregating the watermarked local gradients...')
-                logger.info('Aggregating the watermarked local gradients...')
+                logger.debug('Aggregating the watermarked local gradients...')
                 # try the accuracy if we don't unwatermark the local gradients
                 global_grad_w, selected_idx_w, isbyz_w = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
                 model_watermark = copy.deepcopy(model)
                 vector_to_parameters(global_grad_w, model_watermark.parameters())
                 acc_w = test_classification(device, model_watermark, test_loader)
                 # print("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
-                logger.info("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
+                logger.debug("Aggregation Watermarked model Test Accuracy: {}%".format(acc_w))
                 # print()
                 # for alignIns, we need to flatten the gradients
                 # flatten_global_grad = parameters_to_vector(
                 #     [model.state_dict()[name] for name in model.state_dict()]).detach()
                 # print('\nRecovering the local gradients...')
-                logger.info('Recovering the local gradients...')
+                logger.debug('Recovering the local gradients...')
                 
                 for i in range(len(local_grads)):
                     masks = args.masks if hasattr(args, 'masks') else [0,1000]
@@ -341,16 +341,16 @@ if __name__ == '__main__':
                         # print('Watermark masks: ',masks)
                         # print("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
                         # print()
-                        logger.info(f'Watermark masks: {masks}')
-                        logger.info("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
+                        logger.debug(f'Watermark masks: {masks}')
+                        logger.debug("Watermarked local model Test Accuracy for client {}: {}%".format(i,acc_w))
                     
                     # print('Watermarked:',local_grads[i][masks[0]:masks[1]][:10])
-                    logger.info(f'Watermarked:{local_grads[i][masks[0]:masks[1]][:10]}')
+                    logger.debug(f'Watermarked:{local_grads[i][masks[0]:masks[1]][:10]}')
                     recovered_grad,m = args.watermark.detect(copy.deepcopy(local_grads[i][masks[0]:masks[1]]),alpha=alpha_used[idx_users[i]], k=args.k)
                     local_grads[i][masks[0]:masks[1]] = recovered_grad.to(device)
                     # local_grads[i][masks[0]:masks[1]] = detect_recover_on_position(masks=masks,whole_grads=local_grads[i],Watermark=args.watermark,args=args)
                     # print('Recovered',local_grads[i][masks[0]:masks[1]][:10])
-                    logger.info(f'Recovered:{local_grads[i][masks[0]:masks[1]][:10]}')
+                    logger.debug(f'Recovered:{local_grads[i][masks[0]:masks[1]][:10]}')
 
             # get global gradient
             global_grad, selected_idx, isbyz = GAR.aggregate(local_grads, f=num_byzs, epoch=epoch, g0=flatten_global_grad, agent_data_sizes=agent_data_sizes, iteration=it,attack=args.attack)
